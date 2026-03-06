@@ -31,6 +31,10 @@
       box-sizing: border-box;
     }
 
+    html {
+      scroll-padding-top: 80px; /* Header height (64px) + some breathing room */
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
       background: var(--bg-primary);
@@ -90,10 +94,18 @@
       transition: color 0.2s;
     }
 
-    .nav-links a:hover,
-    .nav-links a.active {
-      color: var(--text-primary);
-      text-decoration: none;
+    .nav-links a[target="_blank"]::after,
+    .sidebar-section a[target="_blank"]::after,
+    footer a[target="_blank"]::after {
+      content: "";
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-left: 4px;
+      background-color: currentColor;
+      -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>') no-repeat center;
+      mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>') no-repeat center;
+      opacity: 0.6;
     }
 
     /* Layout */
@@ -114,6 +126,25 @@
       top: 64px;
       height: calc(100vh - 64px);
       overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-color) transparent;
+    }
+
+    .sidebar::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .sidebar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+      background-color: var(--border-color);
+      border-radius: 20px;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb:hover {
+      background-color: var(--text-muted);
     }
 
     .sidebar-section {
@@ -420,19 +451,118 @@
       color: var(--accent-orange);
     }
 
-    /* Architecture diagram */
-    .architecture {
+    /* Architecture Visual */
+    .arch-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
+      margin: 2.5rem 0;
+    }
+
+    .arch-box {
       background: var(--bg-secondary);
       border: 1px solid var(--border-color);
       border-radius: 12px;
-      padding: 2rem;
-      margin: 2rem 0;
-      font-family: 'SF Mono', monospace;
-      font-size: 0.9rem;
-      line-height: 1.8;
-      white-space: pre;
-      overflow-x: auto;
+      padding: 1.5rem;
+      width: 100%;
+      position: relative;
+      transition: border-color 0.2s;
     }
+
+    .arch-box:hover {
+      border-color: var(--accent-purple);
+    }
+
+    .arch-label {
+      font-weight: 700;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .arch-website {
+      max-width: 600px;
+      border-bottom: 3px solid var(--accent-cyan);
+    }
+
+    .arch-code {
+      font-family: 'SF Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      background: var(--bg-tertiary);
+      padding: 0.75rem;
+      border-radius: 6px;
+    }
+
+    .arch-arrow {
+      color: var(--text-muted);
+      font-size: 1.5rem;
+    }
+
+    .arch-edge {
+      background: rgba(168, 85, 247, 0.03);
+      border: 1px dashed rgba(168, 85, 247, 0.3);
+      border-radius: 20px;
+      padding: 2rem;
+      width: 100%;
+    }
+
+    .arch-edge-header {
+      text-align: center;
+      font-weight: 700;
+      color: var(--accent-purple);
+      margin-bottom: 1.5rem;
+      font-size: 1.1rem;
+    }
+
+    .arch-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    .arch-feature-list {
+      list-style: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    .arch-feature-list li {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .arch-feature-list li::before {
+      content: "→";
+      color: var(--accent-pink);
+      font-weight: bold;
+    }
+
+    .arch-r2 {
+      border-left: 3px solid var(--accent-green);
+    }
+
+    .arch-worker {
+      border-left: 3px solid var(--accent-orange);
+    }
+
+    /* Prism token colors for brand theme */
+    .token.comment, .token.prolog, .token.doctype, .token.cdata { color: var(--text-muted) !important; }
+    .token.punctuation { color: var(--text-secondary) !important; }
+    .token.keyword, .token.operator, .token.punctuation { color: var(--accent-purple) !important; }
+    .token.string, .token.char, .token.attr-value { color: var(--accent-green) !important; }
+    .token.function, .token.attr-name { color: var(--accent-cyan) !important; }
+    .token.property, .token.class-name, .token.constant, .token.symbol { color: var(--accent-pink) !important; }
+    .token.boolean, .token.number { color: var(--accent-orange) !important; }
 
     /* Footer */
     footer {
@@ -451,6 +581,10 @@
 
       .content {
         padding: 2rem;
+      }
+
+      .arch-grid {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -516,75 +650,69 @@
       <h2 id="architecture">Architecture</h2>
       <p>YourTM uses Cloudflare R2 (object storage) for maximum performance and cost efficiency:</p>
 
-      <div class="architecture">
-┌─────────────────────────────────────────────────────────────────┐
-│                        Your Website                              │
-│  &lt;script src="https://cdn.yourdomain.com/latest/core.js"&gt;      │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Cloudflare Edge (300+ PoPs)                   │
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │              R2 Public Bucket (Static CDN)               │    │
-│  │  • Serves bundles directly from edge cache               │    │
-│  │  • No Worker invocations for static files                │    │
-│  │  • Immutable versioned URLs: /v/20240315.1423/core.js    │    │
-│  │  • Latest URLs: /latest/core.js                          │    │
-│  │  • ~5-20ms global latency                                │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │              Worker (API Only - Optional)                │    │
-│  │  • Telemetry endpoint: /_ytm/telemetry                   │    │
-│  │  • Preview mode: /_ytm/preview                           │    │
-│  │  • Health checks: /health                                │    │
-│  │  • Only invoked for API calls, not static files          │    │
-│  └─────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────┘</div>
+      <div class="arch-container">
+        <div class="arch-box arch-website">
+          <div class="arch-label"><span>🌐</span> Your Website</div>
+          <div class="arch-code">&lt;script src="https://cdn.yourdomain.com/latest/core.js" async&gt;&lt;/script&gt;</div>
+        </div>
 
-      <h3>Why R2 Instead of Workers + KV?</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Aspect</th>
-            <th>R2 (New)</th>
-            <th>Workers + KV (Legacy)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>Bundle Requests</strong></td>
-            <td>Direct from CDN cache</td>
-            <td>Worker invocation per request</td>
-          </tr>
-          <tr>
-            <td><strong>Cost at Scale</strong></td>
-            <td>~$0.015/million requests</td>
-            <td>~$0.50/million requests</td>
-          </tr>
-          <tr>
-            <td><strong>Latency</strong></td>
-            <td>~5-20ms (edge cached)</td>
-            <td>~10-50ms (Worker + KV)</td>
-          </tr>
-          <tr>
-            <td><strong>Free Tier Usage</strong></td>
-            <td>Bundles don't count</td>
-            <td>100k/day limit applies</td>
-          </tr>
-        </tbody>
-      </table>
+        <div class="arch-arrow">▼</div>
+
+        <div class="arch-edge">
+          <div class="arch-edge-header">Cloudflare Edge (300+ PoPs)</div>
+          <div class="arch-grid">
+            <div class="arch-box arch-r2">
+              <div class="arch-label"><span>📦</span> R2 Static CDN</div>
+              <ul class="arch-feature-list">
+                <li>Direct CDN cache delivery</li>
+                <li>No Worker overhead for bundles</li>
+                <li>Versioned & Latest URLs</li>
+                <li>Latency: 5-20ms global</li>
+              </ul>
+            </div>
+            <div class="arch-box arch-worker">
+              <div class="arch-label"><span>⚡</span> Worker (API Only)</div>
+              <ul class="arch-feature-list">
+                <li>Telemetry collection</li>
+                <li>Live Preview mode</li>
+                <li>Health & Status checks</li>
+                <li>Zero-cost for bundle reads</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h2 id="advantage">The Edge-Native Advantage</h2>
+      <p>
+        YourTM is the first tag manager built from the ground up to leverage the <strong>Cloudflare Edge</strong>. 
+        By using R2 Object Storage and the global CDN, we've eliminated the performance "tax" associated with traditional tag managers.
+      </p>
+
+      <div class="arch-grid">
+        <div class="arch-box">
+          <div class="arch-label"><span>⚡</span> Sub-Millisecond Execution</div>
+          <p style="font-size: 0.9rem; color: var(--text-secondary);">
+            Unlike GTM, which requires a Worker-like invocation to "stitch" tags together, YourTM serves pre-compiled, 
+            immutable bundles directly from Cloudflare's edge cache. This results in global latency of <strong>5-20ms</strong>.
+          </p>
+        </div>
+        <div class="arch-box">
+          <div class="arch-label"><span>💰</span> Near-Zero Cost</div>
+          <p style="font-size: 0.9rem; color: var(--text-secondary);">
+            By serving static assets through R2, you bypass Worker invocation costs. 
+            A site with <strong>10 million page views</strong> costs roughly <strong>$3.60/month</strong> to track, 
+            which easily fits within most Cloudflare free tiers.
+          </p>
+        </div>
+      </div>
 
       <h3>Key Benefits</h3>
       <ul>
-        <li><strong>Global Distribution</strong> - 300+ edge locations worldwide</li>
-        <li><strong>Lowest Latency</strong> - Direct CDN cache, no Worker overhead</li>
-        <li><strong>Cost Efficient</strong> - No Worker invocations for static bundles</li>
-        <li><strong>Infinite Scale</strong> - Handles billions of requests</li>
-        <li><strong>99.99% Uptime SLA</strong> - Enterprise-grade reliability</li>
-        <li><strong>Free Tier Friendly</strong> - R2 has generous free tier (10GB storage, 10M reads/month)</li>
+        <li><strong>Global Distribution</strong> - Your tags are cached in 300+ edge locations, physically closer to your users.</li>
+        <li><strong>Zero-Latency Logic</strong> - Zone detection happens at the edge, so the browser only ever sees the code it needs.</li>
+        <li><strong>Infinite Scalability</strong> - Built on the same infrastructure that powers 20% of the internet.</li>
+        <li><strong>Free Tier Friendly</strong> - R2's generous free tier (10M reads/mo) means most production sites run for free.</li>
       </ul>
 
       <h2 id="requirements">Requirements</h2>

@@ -29,6 +29,10 @@
       box-sizing: border-box;
     }
 
+    html {
+      scroll-padding-top: 80px; /* Header height (64px) + some breathing room */
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
       background: var(--bg-primary);
@@ -88,10 +92,18 @@
       transition: color 0.2s;
     }
 
-    .nav-links a:hover,
-    .nav-links a.active {
-      color: var(--text-primary);
-      text-decoration: none;
+    .nav-links a[target="_blank"]::after,
+    .sidebar-section a[target="_blank"]::after,
+    footer a[target="_blank"]::after {
+      content: "";
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-left: 4px;
+      background-color: currentColor;
+      -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>') no-repeat center;
+      mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>') no-repeat center;
+      opacity: 0.6;
     }
 
     /* Layout */
@@ -112,6 +124,25 @@
       top: 64px;
       height: calc(100vh - 64px);
       overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-color) transparent;
+    }
+
+    .sidebar::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .sidebar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+      background-color: var(--border-color);
+      border-radius: 20px;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb:hover {
+      background-color: var(--text-muted);
     }
 
     .sidebar-section {
@@ -220,6 +251,14 @@
       color: var(--text-primary) !important;
     }
 
+    /* Custom Prism Token Colors */
+    .token.keyword, .token.operator, .token.punctuation { color: var(--accent-purple) !important; }
+    .token.string, .token.char, .token.attr-value { color: var(--accent-green) !important; }
+    .token.function, .token.attr-name { color: var(--accent-cyan) !important; }
+    .token.comment, .token.prolog, .token.doctype, .token.cdata { color: var(--text-muted) !important; }
+    .token.property, .token.class-name, .token.constant, .token.symbol { color: var(--accent-pink) !important; }
+    .token.boolean, .token.number { color: var(--accent-orange) !important; }
+
     .code-filename {
       background: var(--bg-tertiary);
       border: 1px solid var(--border-color);
@@ -276,18 +315,189 @@
       background: linear-gradient(135deg, var(--accent-yellow), var(--accent-orange));
     }
 
-    /* Diagram */
-    .diagram {
+    /* Flow Diagram */
+    .flow-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
+      margin: 3rem 0;
+    }
+
+    .flow-box {
       background: var(--bg-secondary);
       border: 1px solid var(--border-color);
       border-radius: 12px;
+      padding: 1.5rem;
+      width: 100%;
+      position: relative;
+      transition: border-color 0.2s;
+    }
+
+    .flow-box:hover {
+      border-color: var(--accent-purple);
+    }
+
+    .flow-label {
+      font-weight: 700;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .flow-website {
+      max-width: 600px;
+      border-bottom: 3px solid var(--accent-cyan);
+    }
+
+    .flow-arrow {
+      color: var(--text-muted);
+      font-size: 1.5rem;
+    }
+
+    .flow-runtime {
+      background: rgba(168, 85, 247, 0.03);
+      border: 1px dashed rgba(168, 85, 247, 0.3);
+      border-radius: 20px;
       padding: 2rem;
-      margin: 2rem 0;
-      font-family: 'SF Mono', monospace;
+      width: 100%;
+    }
+
+    .flow-runtime-header {
+      text-align: center;
+      font-weight: 700;
+      color: var(--accent-purple);
+      margin-bottom: 2rem;
+      font-size: 1.1rem;
+    }
+
+    .flow-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    .flow-item {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    .flow-item-header {
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--text-primary);
+      text-align: center;
+    }
+
+    .flow-item-sub {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-align: center;
+      margin-bottom: 1rem;
+      font-style: italic;
+    }
+
+    .flow-list {
+      list-style: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    .flow-list li {
       font-size: 0.85rem;
-      line-height: 1.6;
-      white-space: pre;
-      overflow-x: auto;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .flow-list li::before {
+      content: "•";
+      color: var(--accent-pink);
+    }
+
+    .flow-zones { border-top: 3px solid var(--accent-yellow); }
+    .flow-triggers { border-top: 3px solid var(--accent-cyan); }
+    .flow-tags { border-top: 3px solid var(--accent-purple); }
+
+    /* Lifecycle Diagram */
+    .lifecycle {
+      display: flex;
+      flex-direction: column;
+      margin: 2rem 0;
+    }
+
+    .lc-step {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      position: relative;
+      padding-bottom: 2rem;
+    }
+
+    .lc-step:last-child {
+      padding-bottom: 0;
+    }
+
+    .lc-icon {
+      width: 48px;
+      height: 48px;
+      min-width: 48px;
+      border-radius: 12px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+      font-size: 1.25rem;
+      font-weight: bold;
+      color: var(--accent-purple);
+    }
+
+    .lc-step:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: 23px;
+      top: 48px;
+      bottom: 0;
+      width: 2px;
+      background: var(--border-color);
+      z-index: 1;
+    }
+
+    .lc-content {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      flex: 1;
+    }
+
+    .lc-content h4 {
+      margin: 0 0 0.25rem 0;
+      color: var(--text-primary);
+      font-size: 1rem;
+    }
+
+    .lc-content p {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+    }
+
+    .lc-decision .lc-icon {
+      border-radius: 50%;
+      background: rgba(6, 182, 212, 0.1);
+      border-color: rgba(6, 182, 212, 0.3);
+      color: var(--accent-cyan);
     }
 
     /* Property list */
@@ -417,24 +627,48 @@
         YourTM uses three core concepts to manage tracking and analytics on your website:
       </p>
 
-      <div class="diagram">
-┌─────────────────────────────────────────────────────────────────────┐
-│                          Your Website                                │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         YourTM Runtime                               │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
-│  │     ZONES       │  │    TRIGGERS     │  │        TAGS         │  │
-│  │                 │  │                 │  │                     │  │
-│  │  Which pages?   │──│  When to fire?  │──│  What to execute?   │  │
-│  │                 │  │                 │  │                     │  │
-│  │  • global       │  │  • page-load    │  │  • GA4 Pageview     │  │
-│  │  • checkout     │  │  • click        │  │  • Meta Pixel       │  │
-│  │  • product      │  │  • scroll       │  │  • Custom tracking  │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘</div>
+      <div class="flow-container">
+        <div class="flow-box flow-website">
+          <div class="flow-label" style="justify-content: center;"><span>🌐</span> Your Website</div>
+        </div>
+
+        <div class="flow-arrow">▼</div>
+
+        <div class="flow-runtime">
+          <div class="flow-runtime-header">YourTM Runtime</div>
+          <div class="flow-grid">
+            <div class="flow-item flow-zones">
+              <div class="flow-item-header">Zones</div>
+              <div class="flow-item-sub">Which pages?</div>
+              <ul class="flow-list">
+                <li>global</li>
+                <li>checkout</li>
+                <li>product</li>
+              </ul>
+            </div>
+            
+            <div class="flow-item flow-triggers">
+              <div class="flow-item-header">Triggers</div>
+              <div class="flow-item-sub">When to fire?</div>
+              <ul class="flow-list">
+                <li>page-load</li>
+                <li>click</li>
+                <li>scroll</li>
+              </ul>
+            </div>
+
+            <div class="flow-item flow-tags">
+              <div class="flow-item-header">Tags</div>
+              <div class="flow-item-sub">What to execute?</div>
+              <ul class="flow-list">
+                <li>GA4 Pageview</li>
+                <li>Meta Pixel</li>
+                <li>Custom tracking</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <h2 id="tags">Tags</h2>
       <p>
@@ -849,56 +1083,71 @@ window.YTM.push({
         Understanding the tag lifecycle helps you write efficient tags.
       </p>
 
-      <div class="diagram">
-Page Load
-    │
-    ▼
-┌─────────────────┐
-│  Load core.js   │  (~2KB runtime)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Match Zones    │  Determine which zone bundles to load
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Load zone-*.js │  Load only matching zone bundles
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Register Tags  │  Add tags to runtime
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Run setup()    │  One-time initialization (load scripts)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Wait Trigger   │  Listen for trigger events
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    │ Trigger │
-    └────┬────┘
-         │
-         ▼
-┌─────────────────┐
-│ Check Consent   │  Verify required consent granted
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    │ Granted │
-    └────┬────┘
-         │
-         ▼
-┌─────────────────┐
-│ Run execute()   │  Execute tag code
-└─────────────────┘</div>
+      <div class="lifecycle">
+        <div class="lc-step">
+          <div class="lc-icon">1</div>
+          <div class="lc-content">
+            <h4>Load core.js</h4>
+            <p>The tiny (~2KB) runtime engine is downloaded.</p>
+          </div>
+        </div>
+
+        <div class="lc-step">
+          <div class="lc-icon">2</div>
+          <div class="lc-content">
+            <h4>Match Zones</h4>
+            <p>The runtime detects the current URL and determines which zone bundles to load.</p>
+          </div>
+        </div>
+
+        <div class="lc-step">
+          <div class="lc-icon">3</div>
+          <div class="lc-content">
+            <h4>Load zone-*.js</h4>
+            <p>Only the specific bundles matching the active zones are loaded.</p>
+          </div>
+        </div>
+
+        <div class="lc-step">
+          <div class="lc-icon">4</div>
+          <div class="lc-content">
+            <h4>Register Tags</h4>
+            <p>Tags from the loaded bundles are registered into the runtime.</p>
+          </div>
+        </div>
+
+        <div class="lc-step">
+          <div class="lc-icon">5</div>
+          <div class="lc-content">
+            <h4>Run setup()</h4>
+            <p>One-time initialization occurs (e.g., injecting third-party vendor scripts).</p>
+          </div>
+        </div>
+
+        <div class="lc-step lc-decision">
+          <div class="lc-icon">⚡</div>
+          <div class="lc-content">
+            <h4>Wait for Trigger</h4>
+            <p>The runtime listens for browser events (clicks, scrolls, pageviews).</p>
+          </div>
+        </div>
+
+        <div class="lc-step lc-decision">
+          <div class="lc-icon">🛡️</div>
+          <div class="lc-content">
+            <h4>Check Consent</h4>
+            <p>When a trigger fires, the runtime verifies the user has granted required consent.</p>
+          </div>
+        </div>
+
+        <div class="lc-step">
+          <div class="lc-icon">▶</div>
+          <div class="lc-content">
+            <h4>Run execute()</h4>
+            <p>The tag's execute function is called, sending data to the analytics platform.</p>
+          </div>
+        </div>
+      </div>
 
       <h2 id="bundles">Bundle Architecture</h2>
       <p>

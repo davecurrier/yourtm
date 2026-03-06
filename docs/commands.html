@@ -31,6 +31,10 @@
       box-sizing: border-box;
     }
 
+    html {
+      scroll-padding-top: 80px; /* Header height (64px) + some breathing room */
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
       background: var(--bg-primary);
@@ -90,10 +94,18 @@
       transition: color 0.2s;
     }
 
-    .nav-links a:hover,
-    .nav-links a.active {
-      color: var(--text-primary);
-      text-decoration: none;
+    .nav-links a[target="_blank"]::after,
+    .sidebar-section a[target="_blank"]::after,
+    footer a[target="_blank"]::after {
+      content: "";
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-left: 4px;
+      background-color: currentColor;
+      -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>') no-repeat center;
+      mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>') no-repeat center;
+      opacity: 0.6;
     }
 
     /* Layout */
@@ -114,6 +126,25 @@
       top: 64px;
       height: calc(100vh - 64px);
       overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-color) transparent;
+    }
+
+    .sidebar::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .sidebar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+      background-color: var(--border-color);
+      border-radius: 20px;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb:hover {
+      background-color: var(--text-muted);
     }
 
     .sidebar-section {
@@ -254,39 +285,6 @@
       padding: 0;
     }
 
-    /* Prism token colors for dark theme */
-    .token.comment,
-    .token.prolog,
-    .token.doctype,
-    .token.cdata { color: #6a737d; }
-    .token.punctuation { color: #a1a1aa; }
-    .token.property,
-    .token.tag,
-    .token.boolean,
-    .token.number,
-    .token.constant,
-    .token.symbol,
-    .token.deleted { color: #f97316; }
-    .token.selector,
-    .token.attr-name,
-    .token.string,
-    .token.char,
-    .token.builtin,
-    .token.inserted { color: #10b981; }
-    .token.operator,
-    .token.entity,
-    .token.url,
-    .language-css .token.string,
-    .style .token.string { color: #06b6d4; }
-    .token.atrule,
-    .token.attr-value,
-    .token.keyword { color: #a855f7; }
-    .token.function,
-    .token.class-name { color: #ec4899; }
-    .token.regex,
-    .token.important,
-    .token.variable { color: #f59e0b; }
-
     /* Command card */
     .command-card {
       background: var(--bg-secondary);
@@ -389,6 +387,60 @@
       margin-bottom: 0.75rem;
     }
 
+    /* Command Anatomy */
+    .anatomy {
+      display: flex;
+      gap: 0.5rem;
+      font-family: 'SF Mono', monospace;
+      font-size: 1.1rem;
+      background: var(--bg-secondary);
+      padding: 1.5rem;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      margin: 2rem 0;
+      justify-content: center;
+    }
+
+    .anatomy span {
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .anatomy .tool { color: var(--accent-purple); border: 1px solid rgba(168, 85, 247, 0.3); }
+    .anatomy .cmd { color: var(--accent-cyan); border: 1px solid rgba(6, 182, 212, 0.3); }
+    .anatomy .arg { color: var(--accent-pink); border: 1px solid rgba(236, 72, 153, 0.3); }
+    .anatomy .opt { color: var(--accent-yellow); border: 1px solid rgba(245, 158, 11, 0.3); }
+
+    .anatomy-legend {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin-bottom: 3rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    /* Prism token colors for brand theme */
+    .token.comment, .token.prolog, .token.doctype, .token.cdata { color: var(--text-muted) !important; }
+    .token.punctuation { color: var(--text-secondary) !important; }
+    .token.keyword, .token.operator, .token.punctuation { color: var(--accent-purple) !important; }
+    .token.string, .token.char, .token.attr-value { color: var(--accent-green) !important; }
+    .token.function, .token.attr-name { color: var(--accent-cyan) !important; }
+    .token.property, .token.class-name, .token.constant, .token.symbol { color: var(--accent-pink) !important; }
+    .token.boolean, .token.number { color: var(--accent-orange) !important; }
+
     /* Footer */
     footer {
       border-top: 1px solid var(--border-color);
@@ -448,8 +500,6 @@
           <li><a href="#deploy-init">deploy init</a></li>
           <li><a href="#deploy-versions">deploy versions</a></li>
           <li><a href="#rollback">rollback</a></li>
-          <li><a href="#rollback-quick">rollback quick</a></li>
-          <li><a href="#rollback-history">rollback history</a></li>
           <li><a href="#status">status</a></li>
         </ul>
       </div>
@@ -457,8 +507,6 @@
         <h4>Testing</h4>
         <ul>
           <li><a href="#test">test</a></li>
-          <li><a href="#watch">watch</a></li>
-          <li><a href="#diff">diff</a></li>
           <li><a href="#monitor">monitor</a></li>
         </ul>
       </div>
@@ -469,6 +517,23 @@
       <p class="lead">
         Complete reference for all YourTM CLI commands, options, and usage examples.
       </p>
+
+      <h2>Command Anatomy</h2>
+      <p>Every command follows a consistent structure to keep your workflow predictable.</p>
+      
+      <div class="anatomy">
+        <span class="tool">ytm</span>
+        <span class="cmd">command</span>
+        <span class="arg">sub-command</span>
+        <span class="opt">--options</span>
+      </div>
+
+      <div class="anatomy-legend">
+        <div class="legend-item"><div class="legend-color" style="background: var(--accent-purple);"></div> Tool Name</div>
+        <div class="legend-item"><div class="legend-color" style="background: var(--accent-cyan);"></div> Primary Action</div>
+        <div class="legend-item"><div class="legend-color" style="background: var(--accent-pink);"></div> Scope/Target</div>
+        <div class="legend-item"><div class="legend-color" style="background: var(--accent-yellow);"></div> Modifiers</div>
+      </div>
 
       <h2>Global Options</h2>
       <p>These options are available for all commands:</p>
@@ -487,6 +552,10 @@
           <tr>
             <td>--help</td>
             <td>Display help for command</td>
+          </tr>
+          <tr>
+            <td>--debug</td>
+            <td>Enable verbose debug logging</td>
           </tr>
         </tbody>
       </table>
@@ -591,16 +660,6 @@ ytm create zone
 # Create Google tag with preset name
 ytm create tag -p google -n "GA4 Pageview"</code></pre>
         </div>
-
-        <h4 style="margin-top: 1.5rem; color: var(--text-muted);">Available Platforms</h4>
-        <ul>
-          <li><strong>Google</strong> - GA4, Google Ads, GTM</li>
-          <li><strong>Meta</strong> - Pixel, Conversions API</li>
-          <li><strong>TikTok</strong> - Pixel, Events API</li>
-          <li><strong>Social</strong> - LinkedIn, Twitter, Pinterest, Snapchat</li>
-          <li><strong>E-commerce</strong> - Multi-platform tracking</li>
-          <li><strong>Utilities</strong> - Custom HTML, cookie consent, data layer</li>
-        </ul>
       </div>
 
       <div class="command-card" id="check">
@@ -686,14 +745,8 @@ ytm check --fix</code></pre>
           <pre><code class="language-bash"># Production build
 ytm build
 
-# Build with source maps (for debugging)
-ytm build --sourcemap
-
-# Clean build
-ytm build --clean
-
 # Watch mode
-ytm build --watch</pre>
+ytm build --watch</code></pre>
         </div>
       </div>
 
@@ -738,10 +791,7 @@ ytm build --watch</pre>
 ytm dev
 
 # Custom port
-ytm dev --port 8080
-
-# Open browser
-ytm dev --open</pre>
+ytm dev --port 8080</code></pre>
         </div>
       </div>
 
@@ -753,7 +803,7 @@ ytm dev --open</pre>
           <h3>ytm deploy</h3>
           <span class="badge badge-deploy">Deploy</span>
         </div>
-        <p class="description">Deploy compiled bundles to Cloudflare KV for global edge delivery.</p>
+        <p class="description">Deploy compiled bundles to Cloudflare for global edge delivery.</p>
         <pre><code class="language-bash">ytm deploy [options]</code></pre>
 
         <table class="options-table">
@@ -771,16 +821,6 @@ ytm dev --open</pre>
               <td>staging</td>
             </tr>
             <tr>
-              <td>-d, --dry-run</td>
-              <td>Simulate deployment without making changes</td>
-              <td>false</td>
-            </tr>
-            <tr>
-              <td>-f, --force</td>
-              <td>Force deployment without approval</td>
-              <td>false</td>
-            </tr>
-            <tr>
               <td>-m, --message &lt;message&gt;</td>
               <td>Deployment message</td>
               <td>-</td>
@@ -790,17 +830,11 @@ ytm dev --open</pre>
 
         <div class="examples">
           <h4>Examples</h4>
-          <pre><code class="language-bash"># Deploy to staging
-ytm deploy
-
-# Deploy to production
+          <pre><code class="language-bash"># Deploy to production
 ytm deploy -e production
 
 # Deploy with message
-ytm deploy -e production -m "Added TikTok pixel"
-
-# Dry run
-ytm deploy --dry-run</pre>
+ytm deploy -e production -m "Added TikTok pixel"</code></pre>
         </div>
       </div>
 
@@ -809,7 +843,7 @@ ytm deploy --dry-run</pre>
           <h3>ytm deploy init</h3>
           <span class="badge badge-deploy">Deploy</span>
         </div>
-        <p class="description">Set up Cloudflare infrastructure (KV namespace, Worker). Run once per project.</p>
+        <p class="description">Set up Cloudflare infrastructure (R2 bucket, Worker). Run once per project.</p>
         <pre><code class="language-bash">ytm deploy init [options]</code></pre>
 
         <table class="options-table">
@@ -831,47 +865,13 @@ ytm deploy --dry-run</pre>
               <td>Cloudflare API Token</td>
               <td>interactive</td>
             </tr>
-            <tr>
-              <td>--worker-name &lt;name&gt;</td>
-              <td>Custom worker name</td>
-              <td>yourtm-cdn</td>
-            </tr>
-            <tr>
-              <td>--env &lt;environment&gt;</td>
-              <td>Environment to set up (staging, production, both)</td>
-              <td>production</td>
-            </tr>
-            <tr>
-              <td>--skip-worker</td>
-              <td>Skip deploying the Cloudflare Worker</td>
-              <td>false</td>
-            </tr>
-            <tr>
-              <td>--save-credentials</td>
-              <td>Save credentials to ~/.yourtm/credentials.json</td>
-              <td>false</td>
-            </tr>
-            <tr>
-              <td>-y, --yes</td>
-              <td>Skip confirmation prompts</td>
-              <td>false</td>
-            </tr>
           </tbody>
         </table>
 
         <div class="examples">
           <h4>Examples</h4>
           <pre><code class="language-bash"># Interactive setup
-ytm deploy init
-
-# CI/CD setup with env vars
-ytm deploy init \
-  --account-id $CLOUDFLARE_ACCOUNT_ID \
-  --api-token $CLOUDFLARE_API_TOKEN \
-  --yes
-
-# Setup both environments
-ytm deploy init --env both</pre>
+ytm deploy init</code></pre>
         </div>
       </div>
 
@@ -897,25 +897,8 @@ ytm deploy init --env both</pre>
               <td>Environment (staging, production)</td>
               <td>staging</td>
             </tr>
-            <tr>
-              <td>-l, --limit &lt;count&gt;</td>
-              <td>Number of versions to show</td>
-              <td>10</td>
-            </tr>
           </tbody>
         </table>
-
-        <div class="examples">
-          <h4>Examples</h4>
-          <pre><code class="language-bash"># List staging versions
-ytm deploy versions
-
-# List production versions
-ytm deploy versions -e production
-
-# Show last 20 versions
-ytm deploy versions --limit 20</pre>
-        </div>
       </div>
 
       <div class="command-card" id="rollback">
@@ -945,94 +928,6 @@ ytm deploy versions --limit 20</pre>
               <td>Target environment</td>
               <td>staging</td>
             </tr>
-            <tr>
-              <td>-f, --force</td>
-              <td>Force rollback without confirmation</td>
-              <td>false</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="examples">
-          <h4>Examples</h4>
-          <pre><code class="language-bash"># Interactive rollback (shows version list)
-ytm rollback
-
-# Rollback to specific version
-ytm rollback v1.2.3 -e production
-
-# Force rollback
-ytm rollback v1.2.3 -e production --force</pre>
-        </div>
-      </div>
-
-      <div class="command-card" id="rollback-quick">
-        <div class="command-header">
-          <h3>ytm rollback quick</h3>
-          <span class="badge badge-deploy">Deploy</span>
-        </div>
-        <p class="description">Quickly rollback to the previous version (one version back).</p>
-        <pre><code class="language-bash">ytm rollback quick [options]</code></pre>
-
-        <table class="options-table">
-          <thead>
-            <tr>
-              <th>Option</th>
-              <th>Description</th>
-              <th>Default</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>-e, --env &lt;environment&gt;</td>
-              <td>Target environment</td>
-              <td>staging</td>
-            </tr>
-            <tr>
-              <td>-f, --force</td>
-              <td>Force rollback without confirmation</td>
-              <td>false</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="examples">
-          <h4>Examples</h4>
-          <pre><code class="language-bash"># Quick rollback production
-ytm rollback quick -e production
-
-# Force quick rollback
-ytm rollback quick -e production --force</pre>
-        </div>
-      </div>
-
-      <div class="command-card" id="rollback-history">
-        <div class="command-header">
-          <h3>ytm rollback history</h3>
-          <span class="badge badge-deploy">Deploy</span>
-        </div>
-        <p class="description">Show rollback history for an environment.</p>
-        <pre><code class="language-bash">ytm rollback history [options]</code></pre>
-
-        <table class="options-table">
-          <thead>
-            <tr>
-              <th>Option</th>
-              <th>Description</th>
-              <th>Default</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>-e, --env &lt;environment&gt;</td>
-              <td>Target environment</td>
-              <td>staging</td>
-            </tr>
-            <tr>
-              <td>-l, --limit &lt;count&gt;</td>
-              <td>Number of entries to show</td>
-              <td>10</td>
-            </tr>
           </tbody>
         </table>
       </div>
@@ -1043,21 +938,18 @@ ytm rollback quick -e production --force</pre>
           <span class="badge badge-deploy">Deploy</span>
         </div>
         <p class="description">Show deployment status for all environments.</p>
-        <pre><code class="language-bash">ytm status</pre>
+        <pre><code class="language-bash">ytm status</code></pre>
 
         <div class="examples">
           <h4>Example Output</h4>
-          <pre>YourTM Status
+          <pre><code class="language-bash">YourTM Status
 ─────────────
-
 Container: YTM-MYSITE
 
 Environment   Version   Deployed           Bundles
 ──────────────────────────────────────────────────
 staging       v1.2.4    2 hours ago        4
-production    v1.2.3    3 days ago         4
-
-CDN URL: https://yourtm-cdn.xxx.workers.dev/c/YTM-MYSITE/</pre>
+production    v1.2.3    3 days ago         4</code></pre>
         </div>
       </div>
 
@@ -1087,34 +979,9 @@ CDN URL: https://yourtm-cdn.xxx.workers.dev/c/YTM-MYSITE/</pre>
               <td>-</td>
             </tr>
             <tr>
-              <td>-u, --url &lt;url&gt;</td>
-              <td>URL to test (alternative)</td>
-              <td>-</td>
-            </tr>
-            <tr>
-              <td>--urls &lt;file&gt;</td>
-              <td>File containing URLs for bulk testing</td>
-              <td>-</td>
-            </tr>
-            <tr>
-              <td>-c, --container &lt;id&gt;</td>
-              <td>Container ID to test</td>
-              <td>from config</td>
-            </tr>
-            <tr>
-              <td>-o, --output &lt;file&gt;</td>
-              <td>Output report file (xlsx, json, html)</td>
-              <td>-</td>
-            </tr>
-            <tr>
               <td>--no-headless</td>
               <td>Run browser in headed mode</td>
               <td>false</td>
-            </tr>
-            <tr>
-              <td>-t, --timeout &lt;ms&gt;</td>
-              <td>Timeout in milliseconds</td>
-              <td>30000</td>
             </tr>
           </tbody>
         </table>
@@ -1124,79 +991,8 @@ CDN URL: https://yourtm-cdn.xxx.workers.dev/c/YTM-MYSITE/</pre>
           <pre><code class="language-bash"># Test single URL
 ytm test https://example.com
 
-# Bulk test from file
-ytm test --urls urls.txt --output report.xlsx
-
 # Test with visible browser
-ytm test https://example.com --no-headless</pre>
-        </div>
-      </div>
-
-      <div class="command-card" id="watch">
-        <div class="command-header">
-          <h3>ytm watch</h3>
-          <span class="badge badge-test">Test</span>
-        </div>
-        <p class="description">Watch a URL for tag firing in real-time (continuous testing).</p>
-        <pre><code class="language-bash">ytm watch [url] [options]</code></pre>
-
-        <table class="options-table">
-          <thead>
-            <tr>
-              <th>Option</th>
-              <th>Description</th>
-              <th>Default</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>[url]</td>
-              <td>URL to watch</td>
-              <td>-</td>
-            </tr>
-            <tr>
-              <td>-c, --container &lt;id&gt;</td>
-              <td>Container ID</td>
-              <td>from config</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="command-card" id="diff">
-        <div class="command-header">
-          <h3>ytm diff</h3>
-          <span class="badge badge-test">Test</span>
-        </div>
-        <p class="description">Compare tag behavior between two test results or versions.</p>
-        <pre><code class="language-bash">ytm diff [options]</code></pre>
-
-        <table class="options-table">
-          <thead>
-            <tr>
-              <th>Option</th>
-              <th>Description</th>
-              <th>Default</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>-b, --baseline &lt;file&gt;</td>
-              <td>Baseline results file</td>
-              <td>-</td>
-            </tr>
-            <tr>
-              <td>--current &lt;file&gt;</td>
-              <td>Current results file</td>
-              <td>-</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="examples">
-          <h4>Examples</h4>
-          <pre><code class="language-bash"># Compare two test results
-ytm diff --baseline before.json --current after.json</pre>
+ytm test https://example.com --no-headless</code></pre>
         </div>
       </div>
 
@@ -1218,19 +1014,9 @@ ytm diff --baseline before.json --current after.json</pre>
           </thead>
           <tbody>
             <tr>
-              <td>-c, --container &lt;id&gt;</td>
-              <td>Container ID</td>
-              <td>from config</td>
-            </tr>
-            <tr>
               <td>-m, --mode &lt;mode&gt;</td>
               <td>Monitor mode: preview or live</td>
               <td>preview</td>
-            </tr>
-            <tr>
-              <td>-f, --filter &lt;tag&gt;</td>
-              <td>Filter by tag name</td>
-              <td>-</td>
             </tr>
           </tbody>
         </table>
@@ -1241,10 +1027,7 @@ ytm diff --baseline before.json --current after.json</pre>
 ytm monitor
 
 # Monitor production traffic
-ytm monitor --mode live
-
-# Filter by tag name
-ytm monitor --filter "GA4"</pre>
+ytm monitor --mode live</code></pre>
         </div>
       </div>
 
