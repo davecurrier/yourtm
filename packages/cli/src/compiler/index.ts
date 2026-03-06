@@ -352,9 +352,18 @@ export class Compiler {
 
   private generateRuntimeCode(): string {
     const triggers = Array.from(this.triggers.values());
+    const variables = Array.from(this.variables.values());
+    
     const triggersJson = JSON.stringify(triggers, (_key, value) => {
       if (value instanceof RegExp) {
         return { __regexp: value.source, flags: value.flags };
+      }
+      return value;
+    });
+
+    const variablesJson = JSON.stringify(variables, (_key, value) => {
+      if (typeof value === 'function') {
+        return `__FUNC_${value.toString()}__`;
       }
       return value;
     });
@@ -373,6 +382,7 @@ export class Compiler {
   const state = {
     tags: new Map(),
     triggers: new Map(),
+    variables: new Map(),
     zones: new Map(),
     consent: {},
     initialized: false,
@@ -381,6 +391,23 @@ export class Compiler {
   // Trigger registry
   const triggers = ${triggersJson};
   triggers.forEach(t => state.triggers.set(t.id, t));
+
+  // Variable registry
+  const vars = ${variablesJson};
+  vars.forEach(v => {
+    // Revive functions if they were stringified
+    Object.keys(v).forEach(k => {
+      if (typeof v[k] === 'string' && v[k].startsWith('__FUNC_')) {
+        const fnStr = v[k].substring(7, v[k].length - 2);
+        try {
+          v[k] = eval('(' + fnStr + ')');
+        } catch(e) {
+          console.error('[YTM] Failed to revive function', k, e);
+        }
+      }
+    });
+    state.variables.set(v.name || v.id, v);
+  });
 
   // Event handlers
   const handlers = {
@@ -689,4 +716,8 @@ export function defineTrigger(trigger: TriggerDefinition): TriggerDefinition {
 
 export function defineZone(zone: ZoneDefinition): ZoneDefinition {
   return zone;
+}
+
+export function defineVariable(variable: VariableDefinition): VariableDefinition {
+  return variable;
 }
