@@ -483,6 +483,7 @@
         <ul>
           <li><a href="#init">init</a></li>
           <li><a href="#create">create</a></li>
+          <li><a href="#import">import</a></li>
           <li><a href="#audit">audit</a></li>
         </ul>
       </div>
@@ -659,6 +660,56 @@ ytm create zone
 
 # Create Google tag with preset name
 ytm create tag -p google -n "GA4 Pageview"</code></pre>
+        </div>
+      </div>
+
+      <div class="command-card" id="import">
+        <div class="command-header">
+          <h3>ytm import</h3>
+          <span class="badge badge-core">Core</span>
+        </div>
+        <p class="description">Import tags, triggers, and variables from another platform (currently supports Google Tag Manager JSON exports).</p>
+        <pre><code class="language-bash">ytm import &lt;source&gt; &lt;file&gt; [options]</code></pre>
+
+        <table class="options-table">
+          <thead>
+            <tr>
+              <th>Option</th>
+              <th>Description</th>
+              <th>Default</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>&lt;source&gt;</td>
+              <td>The source platform (e.g., 'gtm')</td>
+              <td>-</td>
+            </tr>
+            <tr>
+              <td>&lt;file&gt;</td>
+              <td>Path to the export file (JSON)</td>
+              <td>-</td>
+            </tr>
+            <tr>
+              <td>-o, --output &lt;dir&gt;</td>
+              <td>Custom output directory</td>
+              <td>yourtm/</td>
+            </tr>
+            <tr>
+              <td>-f, --force</td>
+              <td>Overwrite existing files</td>
+              <td>false</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="examples">
+          <h4>Examples</h4>
+          <pre><code class="language-bash"># Import from a GTM export file
+ytm import gtm ./gtm-export.json
+
+# Import into a custom directory
+ytm import gtm ./export.json --output ./custom-tags</code></pre>
         </div>
       </div>
 

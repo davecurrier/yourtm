@@ -8,6 +8,7 @@ import { setupCommand } from './commands/setup.js';
 import { initCommand } from './commands/init.js';
 import { buildCommand } from './commands/build.js';
 import { auditCommand } from './commands/audit.js';
+import { importCommand } from './commands/import.js';
 import { devCommand } from './commands/dev.js';
 import { testCommand, watchCommand, diffCommand } from './commands/test.js';
 import { deployCommand, statusCommand, versionsCommand } from './commands/deploy.js';
@@ -60,6 +61,16 @@ program
   .option('--fix', 'Automatically fix issues where possible')
   .action(async (options) => {
     await auditCommand(options);
+  });
+
+// Import command
+program
+  .command('import <source> <file>')
+  .description('Import tags, triggers, and variables from another platform (e.g. gtm)')
+  .option('-o, --output <dir>', 'Custom output directory')
+  .option('-f, --force', 'Overwrite existing files')
+  .action(async (source, file, options) => {
+    await importCommand(source, file, options);
   });
 
 // Dev command
