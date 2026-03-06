@@ -3,8 +3,9 @@
  * Tag registration, execution, zone detection, and performance tracking
  */
 
-import type { ConsentState, ConsentCategory } from './consent';
+import type { ConsentState, ConsentCategory, VariableDefinition } from '@yourtm/core';
 import { getConsent, hasConsent } from './consent';
+import { resolveVariable } from './variables';
 
 // Types
 export interface TagConfig {
@@ -19,6 +20,7 @@ export interface TagConfig {
 
 export interface TagContext {
   dataLayer: Record<string, unknown>;
+  variables: Record<string, any>;
   event?: string;
   element?: Element | null;
   url: string;
@@ -50,6 +52,7 @@ export interface RuntimeConfig {
 // Runtime state
 const tags = new Map<string, TagConfig>();
 const zones = new Map<string, ZoneConfig>();
+const variables = new Map<string, VariableDefinition>();
 const executed = new Set<string>();
 const telemetry: Telemetry[] = [];
 let cfg: RuntimeConfig | null = null;
@@ -77,6 +80,20 @@ export function registerTag(tag: TagConfig): void {
  */
 export function registerTags(list: TagConfig[]): void {
   for (const t of list) tags.set(t.id, t);
+}
+
+/**
+ * Register a variable
+ */
+export function registerVariable(v: VariableDefinition): void {
+  variables.set(v.name, v);
+}
+
+/**
+ * Register multiple variables
+ */
+export function registerVariables(list: VariableDefinition[]): void {
+  for (const v of list) variables.set(v.name, v);
 }
 
 /**
@@ -126,8 +143,32 @@ export async function executeTag(
   // Check consent
   if (tag.consent?.length && !tag.consent.every(hasConsent)) return null;
 
+  // Lazy variables resolver via Proxy
+  const resolvedVars: Record<string, any> = {};
+  const variablesProxy = new Proxy({}, {
+    get: (target, prop: string) => {
+      if (prop in resolvedVars) return resolvedVariables[prop];
+      
+      const def = variables.get(prop);
+      if (!def) return undefined;
+
+      // Note: This is synchronous in the proxy getter, but resolveVariable 
+      // is async. We'll handle this by pre-resolving or allowing async tags.
+      // For now, we return the cached value or a promise.
+      // Better approach for production: pre-resolve all variables used by the tag.
+      return resolvedVars[prop];
+    }
+  });
+
+  // Resolve all variables for the tag context (Simple approach first)
+  const tagVariables: Record<string, any> = {};
+  for (const [name, def] of variables.entries()) {
+    tagVariables[name] = await resolveVariable(def, variables, tagVariables);
+  }
+
   const fullCtx: TagContext = {
     dataLayer: (window as unknown as { dataLayer: Record<string, unknown> }).dataLayer || {},
+    variables: tagVariables,
     url: location.href,
     consent: getConsent(),
     ...ctx

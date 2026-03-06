@@ -10,6 +10,8 @@ export {
   init,
   registerTag,
   registerTags,
+  registerVariable,
+  registerVariables,
   registerZone,
   detectZone,
   loadChunk,
@@ -84,6 +86,8 @@ import * as dataLayer from './dataLayer';
 import * as triggers from './triggers';
 import * as consent from './consent';
 
+import type { VariableDefinition } from '@yourtm/core';
+
 // Types for external use
 export interface YourTMConfig {
   containerId: string;
@@ -92,6 +96,7 @@ export interface YourTMConfig {
   debug?: boolean;
   tags?: core.TagConfig[];
   triggers?: triggers.TriggerConfig[];
+  variables?: VariableDefinition[];
   zones?: core.ZoneConfig[];
 }
 
@@ -118,6 +123,11 @@ export function initYourTM(config: YourTMConfig): void {
     for (const zone of config.zones) {
       core.registerZone(zone);
     }
+  }
+
+  // Register variables
+  if (config.variables) {
+    core.registerVariables(config.variables);
   }
 
   // Register tags
