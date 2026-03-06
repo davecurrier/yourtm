@@ -594,6 +594,7 @@
           <li><a href="#overview">Overview</a></li>
           <li><a href="#tags">Tags</a></li>
           <li><a href="#triggers">Triggers</a></li>
+          <li><a href="#variables">Variables</a></li>
           <li><a href="#zones">Zones</a></li>
         </ul>
       </div>
@@ -636,7 +637,7 @@
 
         <div class="flow-runtime">
           <div class="flow-runtime-header">YourTM Runtime</div>
-          <div class="flow-grid">
+          <div class="flow-grid" style="grid-template-columns: repeat(4, 1fr);">
             <div class="flow-item flow-zones">
               <div class="flow-item-header">Zones</div>
               <div class="flow-item-sub">Which pages?</div>
@@ -654,6 +655,16 @@
                 <li>page-load</li>
                 <li>click</li>
                 <li>scroll</li>
+              </ul>
+            </div>
+
+            <div class="flow-item" style="border-top: 3px solid var(--accent-green);">
+              <div class="flow-item-header">Variables</div>
+              <div class="flow-item-sub">What data?</div>
+              <ul class="flow-list">
+                <li>cartTotal</li>
+                <li>userId</li>
+                <li>orderValue</li>
               </ul>
             </div>
 
@@ -859,6 +870,83 @@ export default defineTrigger({
     selector: '#contact-form',
     waitForValidation: true,
   },
+})</code></pre>
+
+      <h2 id="variables">Variables</h2>
+      <p>
+        Variables are reusable data points that can be used across multiple tags. 
+        They allow you to define a piece of data once (like a Product ID or a Cookie value) 
+        and use it everywhere.
+      </p>
+
+      <div class="concept-card">
+        <h3><span class="concept-icon icon-variable" style="background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan)); color: white; width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700;">V</span> What is a Variable?</h3>
+        <p>
+          A variable is a dynamic value extracted from the dataLayer, cookies, URL, 
+          or custom JavaScript. The YourTM runtime resolves these values 
+          lazily only when a tag requests them.
+        </p>
+      </div>
+
+      <h3>Variable Types</h3>
+      <div class="prop-list">
+        <div class="prop-item">
+          <span class="prop-name">DataLayer</span>
+          <span class="prop-type">datalayer</span>
+          <span class="prop-desc">Reads a value from the dataLayer using dot notation</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">Cookie</span>
+          <span class="prop-type">cookie</span>
+          <span class="prop-desc">Reads a value from a browser cookie</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">URL</span>
+          <span class="prop-type">url</span>
+          <span class="prop-desc">Extracts query parameters, path segments, or hash</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">Computed</span>
+          <span class="prop-type">computed</span>
+          <span class="prop-desc">A custom TypeScript function that calculates a value</span>
+        </div>
+      </div>
+
+      <h3>Defining Variables</h3>
+      <div class="code-filename">yourtm/variables/ecommerce.ts</div>
+      <pre><code class="language-typescript">import { defineDataLayerVariable, defineComputedVariable } from '@yourtm/core'
+
+// Simple DataLayer variable
+export const cartTotal = defineDataLayerVariable({
+  name: 'cartTotal',
+  path: 'ecommerce.cart.total',
+  default: 0
+})
+
+// Complex computed variable
+export const orderValue = defineComputedVariable({
+  name: 'orderValue',
+  compute: (ctx) => {
+    const items = ctx.dataLayer.ecommerce?.items || []
+    return items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+  }
+})</code></pre>
+
+      <h3>Using Variables in Tags</h3>
+      <p>Variables are available on the <code>ctx.variables</code> object in the tag's execute function.</p>
+      <div class="code-filename">yourtm/tags/ga4-purchase.ts</div>
+      <pre><code class="language-typescript">export default defineTag({
+  name: 'GA4 Purchase',
+  execute(ctx) {
+    // Access variables directly
+    const value = ctx.variables.orderValue
+    const currency = ctx.variables.currencyCode || 'USD'
+
+    gtag('event', 'purchase', {
+      value: value,
+      currency: currency
+    })
+  }
 })</code></pre>
 
       <h2 id="zones">Zones</h2>
@@ -1137,6 +1225,14 @@ window.YTM.push({
           <div class="lc-content">
             <h4>Check Consent</h4>
             <p>When a trigger fires, the runtime verifies the user has granted required consent.</p>
+          </div>
+        </div>
+
+        <div class="lc-step">
+          <div class="lc-icon">🔄</div>
+          <div class="lc-content">
+            <h4>Resolve Variables</h4>
+            <p>Any variables used by the tag (dataLayer, cookies, etc.) are resolved lazily.</p>
           </div>
         </div>
 
