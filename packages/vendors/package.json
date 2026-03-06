@@ -1,0 +1,73 @@
+{
+  "name": "@yourtm/vendors",
+  "version": "0.1.0",
+  "description": "Type-safe wrappers for common analytics vendors",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./google": {
+      "types": "./dist/google.d.ts",
+      "import": "./dist/google.js"
+    },
+    "./meta": {
+      "types": "./dist/meta.d.ts",
+      "import": "./dist/meta.js"
+    },
+    "./tiktok": {
+      "types": "./dist/tiktok.d.ts",
+      "import": "./dist/tiktok.js"
+    },
+    "./linkedin": {
+      "types": "./dist/linkedin.d.ts",
+      "import": "./dist/linkedin.js"
+    },
+    "./snapchat": {
+      "types": "./dist/snapchat.d.ts",
+      "import": "./dist/snapchat.js"
+    },
+    "./twitter": {
+      "types": "./dist/twitter.d.ts",
+      "import": "./dist/twitter.js"
+    },
+    "./utils": {
+      "types": "./dist/utils.d.ts",
+      "import": "./dist/utils.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "analytics",
+    "gtag",
+    "google-analytics",
+    "meta-pixel",
+    "facebook-pixel",
+    "tiktok-pixel",
+    "linkedin-insight",
+    "snapchat-pixel",
+    "twitter-pixel",
+    "tag-manager"
+  ],
+  "author": "YourTM",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

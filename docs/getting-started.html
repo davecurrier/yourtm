@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting Started - YourTM CLI</title>
+  <!-- Prism.js syntax highlighting -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-primary: #0a0a0a;
+      --bg-secondary: #141414;
+      --bg-tertiary: #1a1a1a;
+      --text-primary: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --accent-purple: #a855f7;
+      --accent-pink: #ec4899;
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-yellow: #f59e0b;
+      --accent-red: #ef4444;
+      --border-color: #27272a;
+      --code-bg: #18181b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+
+    a {
+      color: var(--accent-cyan);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Navigation */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: rgba(10, 10, 10, 0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border-color);
+      z-index: 100;
+      padding: 0 2rem;
+    }
+
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover,
+    .nav-links a.active {
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    /* Layout */
+    .page-container {
+      display: flex;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding-top: 64px;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 280px;
+      min-width: 280px;
+      padding: 2rem;
+      border-right: 1px solid var(--border-color);
+      position: sticky;
+      top: 64px;
+      height: calc(100vh - 64px);
+      overflow-y: auto;
+    }
+
+    .sidebar-section {
+      margin-bottom: 2rem;
+    }
+
+    .sidebar-section h4 {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+    }
+
+    .sidebar-section ul {
+      list-style: none;
+    }
+
+    .sidebar-section li {
+      margin-bottom: 0.25rem;
+    }
+
+    .sidebar-section a {
+      color: var(--text-secondary);
+      display: block;
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+
+    .sidebar-section a:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    .sidebar-section a.active {
+      background: var(--bg-tertiary);
+      color: var(--accent-cyan);
+    }
+
+    /* Content */
+    .content {
+      flex: 1;
+      padding: 3rem 4rem;
+      max-width: 900px;
+    }
+
+    .content h1 {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .content .lead {
+      font-size: 1.2rem;
+      color: var(--text-secondary);
+      margin-bottom: 3rem;
+    }
+
+    .content h2 {
+      font-size: 1.75rem;
+      margin: 3rem 0 1rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .content h2:first-of-type {
+      border-top: none;
+      padding-top: 0;
+      margin-top: 0;
+    }
+
+    .content h3 {
+      font-size: 1.25rem;
+      margin: 2rem 0 1rem;
+    }
+
+    .content p {
+      margin-bottom: 1rem;
+      color: var(--text-secondary);
+    }
+
+    .content ul, .content ol {
+      margin-bottom: 1rem;
+      padding-left: 1.5rem;
+      color: var(--text-secondary);
+    }
+
+    .content li {
+      margin-bottom: 0.5rem;
+    }
+
+    /* Code blocks - Override Prism theme */
+    pre[class*="language-"],
+    code[class*="language-"] {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      background: var(--code-bg) !important;
+      text-shadow: none !important;
+    }
+
+    pre[class*="language-"] {
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0 1.5rem;
+      overflow-x: auto;
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0 1.5rem;
+      overflow-x: auto;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.9em;
+      background: var(--code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 4px;
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+    }
+
+    /* Prism token colors for dark theme */
+    .token.comment,
+    .token.prolog,
+    .token.doctype,
+    .token.cdata { color: #6a737d; }
+    .token.punctuation { color: #a1a1aa; }
+    .token.property,
+    .token.tag,
+    .token.boolean,
+    .token.number,
+    .token.constant,
+    .token.symbol,
+    .token.deleted { color: #f97316; }
+    .token.selector,
+    .token.attr-name,
+    .token.string,
+    .token.char,
+    .token.builtin,
+    .token.inserted { color: #10b981; }
+    .token.operator,
+    .token.entity,
+    .token.url,
+    .language-css .token.string,
+    .style .token.string { color: #06b6d4; }
+    .token.atrule,
+    .token.attr-value,
+    .token.keyword { color: #a855f7; }
+    .token.function,
+    .token.class-name { color: #ec4899; }
+    .token.regex,
+    .token.important,
+    .token.variable { color: #f59e0b; }
+
+    .code-filename {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-bottom: none;
+      border-radius: 8px 8px 0 0;
+      padding: 0.5rem 1rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 1rem;
+    }
+
+    .code-filename + pre {
+      border-radius: 0 0 8px 8px;
+      margin-top: 0;
+    }
+
+    /* Alerts */
+    .alert {
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      margin: 1.5rem 0;
+      border: 1px solid;
+    }
+
+    .alert-info {
+      background: rgba(6, 182, 212, 0.1);
+      border-color: rgba(6, 182, 212, 0.3);
+    }
+
+    .alert-info::before {
+      content: "ℹ️ ";
+    }
+
+    .alert-warning {
+      background: rgba(245, 158, 11, 0.1);
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+
+    .alert-warning::before {
+      content: "⚠️ ";
+    }
+
+    .alert-success {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    .alert-success::before {
+      content: "✅ ";
+    }
+
+    /* File tree */
+    .file-tree {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0 1.5rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.9rem;
+      line-height: 1.8;
+    }
+
+    .file-tree .folder {
+      color: var(--accent-cyan);
+    }
+
+    .file-tree .file {
+      color: var(--text-secondary);
+    }
+
+    .file-tree .comment {
+      color: var(--text-muted);
+    }
+
+    /* Steps */
+    .steps {
+      counter-reset: step;
+    }
+
+    .step-item {
+      position: relative;
+      padding-left: 3rem;
+      margin-bottom: 2rem;
+    }
+
+    .step-item::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 2rem;
+      height: 2rem;
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      margin-top: 4rem;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .sidebar {
+        display: none;
+      }
+
+      .content {
+        padding: 2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="nav-container">
+      <a href="index.html" class="logo">YourTM</a>
+      <ul class="nav-links">
+        <li><a href="getting-started.html" class="active">Getting Started</a></li>
+        <li><a href="concepts.html">Concepts</a></li>
+        <li><a href="cloudflare.html">Cloudflare Setup</a></li>
+        <li><a href="commands.html">Commands</a></li>
+        <li><a href="https://github.com/yourtm/yourtm-cli" target="_blank">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="page-container">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <h4>Getting Started</h4>
+        <ul>
+          <li><a href="#prerequisites" class="active">Prerequisites</a></li>
+          <li><a href="#installation">Installation</a></li>
+          <li><a href="#init">Initialize Project</a></li>
+          <li><a href="#project-structure">Project Structure</a></li>
+          <li><a href="#configuration">Configuration</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <h4>First Tag</h4>
+        <ul>
+          <li><a href="#create-tag">Create a Tag</a></li>
+          <li><a href="#create-trigger">Create a Trigger</a></li>
+          <li><a href="#create-zone">Create a Zone</a></li>
+          <li><a href="#build">Build</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <h4>Deployment</h4>
+        <ul>
+          <li><a href="#local-testing">Local Testing</a></li>
+          <li><a href="#deploy">Deploy to Edge</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="content">
+      <h1>Getting Started</h1>
+      <p class="lead">
+        Get up and running with YourTM CLI in under 5 minutes.
+        This guide walks you through installation, project setup, and your first deployment.
+      </p>
+
+      <h2 id="prerequisites">Prerequisites</h2>
+      <p>Before you begin, make sure you have the following installed:</p>
+      <ul>
+        <li><strong>Node.js 18+</strong> - YourTM requires Node.js 18 or later</li>
+        <li><strong>npm, yarn, or pnpm</strong> - Any package manager works</li>
+        <li><strong>Git</strong> - Recommended for version control</li>
+        <li><strong>Cloudflare account</strong> - Required for deployment (free tier works)</li>
+      </ul>
+
+      <h2 id="installation">Installation</h2>
+      <p>Install the YourTM CLI with a single command:</p>
+      <pre><code class="language-bash">curl -fsSL https://yourtm.dev/install | bash</code></pre>
+
+      <p>This installs <code>ytm</code> to <code>~/.yourtm/bin</code> and adds it to your PATH.</p>
+
+      <p>Or install via npm if you prefer:</p>
+      <pre><code class="language-bash">npm install -g @yourtm/cli</code></pre>
+
+      <p>Verify the installation:</p>
+      <pre><code class="language-bash">ytm --version</code></pre>
+
+      <h2 id="init">Initialize a New Project</h2>
+      <p>Create a new YourTM project in your current directory:</p>
+      <pre><code class="language-bash">ytm init</code></pre>
+
+      <p>The interactive wizard will ask you a few questions:</p>
+      <pre>? Container name: My Website Tags
+? Container ID: YTM-MYSITE
+? Description: Tag management for mysite.com
+? Default environment: development
+
+✔ Created yourtm.config.ts
+✔ Created yourtm/tags/
+✔ Created yourtm/triggers/
+✔ Created yourtm/zones/
+✔ Installed dependencies
+
+🎉 Project initialized! Run 'ytm create tag' to add your first tag.</pre>
+
+      <h2 id="project-structure">Project Structure</h2>
+      <p>After initialization, your project will have this structure:</p>
+
+      <div class="file-tree">
+<span class="folder">my-project/</span>
+├── <span class="file">yourtm.config.ts</span>      <span class="comment"># Main configuration</span>
+├── <span class="folder">yourtm/</span>
+│   ├── <span class="folder">tags/</span>              <span class="comment"># Tag definitions</span>
+│   │   └── <span class="folder">custom/</span>        <span class="comment"># Custom tags</span>
+│   ├── <span class="folder">triggers/</span>          <span class="comment"># Trigger definitions</span>
+│   └── <span class="folder">zones/</span>             <span class="comment"># Zone definitions</span>
+├── <span class="folder">dist/</span>                  <span class="comment"># Build output (gitignored)</span>
+│   └── <span class="folder">ytm/</span>
+│       ├── <span class="file">core.js</span>        <span class="comment"># Core runtime</span>
+│       ├── <span class="file">zone-global.js</span> <span class="comment"># Global zone bundle</span>
+│       └── <span class="file">zone-*.js</span>      <span class="comment"># Other zone bundles</span>
+└── <span class="file">package.json</span>
+      </div>
+
+      <h2 id="configuration">Configuration</h2>
+      <p>The <code>yourtm.config.ts</code> file is the heart of your project:</p>
+
+      <div class="code-filename">yourtm.config.ts</div>
+      <pre><code class="language-typescript">import { defineConfig } from '@yourtm/core'
+
+export default defineConfig({
+  // Container identification
+  container: {
+    id: 'YTM-MYSITE',
+    name: 'My Website Tags',
+    description: 'Tag management for mysite.com',
+  },
+
+  // Build settings
+  build: {
+    outDir: 'dist/ytm',
+    minify: true,
+    sourcemap: false,
+  },
+
+  // Performance budgets
+  budgets: {
+    maxBundleSize: 100_000,  // 100KB total
+    maxTagSize: 10_000,       // 10KB per tag
+    warnOnSlowTags: 100,      // Warn if tag takes >100ms
+  },
+
+  // Consent categories
+  consent: {
+    categories: ['necessary', 'analytics', 'marketing', 'preferences'],
+    defaultState: {
+      necessary: true,
+      analytics: false,
+      marketing: false,
+      preferences: false,
+    },
+  },
+
+  // Cloudflare deployment (added by ytm deploy init)
+  cloudflare: {
+    accountId: 'YOUR_ACCOUNT_ID',
+    kvNamespaceId: 'YOUR_KV_NAMESPACE_ID',
+    workerName: 'yourtm-cdn',
+  },
+})</code></pre>
+
+      <h2 id="create-tag">Create Your First Tag</h2>
+      <p>Use the interactive wizard to create a tag from a template:</p>
+      <pre><code class="language-bash">ytm create tag</code></pre>
+
+      <p>Select a platform and template:</p>
+      <pre>? Select platform:
+  ❯ Google (GA4, Google Ads, GTM)
+    Meta (Pixel, CAPI)
+    TikTok
+    Social (LinkedIn, Twitter, Pinterest)
+    E-commerce
+    Utilities
+
+? Select template:
+  ❯ GA4 Configuration
+    GA4 Event
+    GA4 Pageview
+    GA4 E-commerce Purchase
+    Google Ads Conversion
+    Google Ads Remarketing</pre>
+
+      <p>Or create a custom tag manually:</p>
+
+      <div class="code-filename">yourtm/tags/custom/my-tracker.ts</div>
+      <pre><code class="language-typescript">import { defineTag } from '@yourtm/core'
+
+export default defineTag({
+  name: 'My Custom Tracker',
+  description: 'Send events to our internal analytics',
+  triggers: ['page-load'],
+  zones: ['global'],
+  consent: ['analytics'],
+
+  execute(ctx) {
+    // Send data to your endpoint
+    fetch('/api/track', {
+      method: 'POST',
+      body: JSON.stringify({
+        event: 'pageview',
+        url: ctx.url.href,
+        timestamp: Date.now(),
+      }),
+    })
+  },
+})</code></pre>
+
+      <h2 id="create-trigger">Create a Trigger</h2>
+      <p>Triggers define when tags fire:</p>
+      <pre><code class="language-bash">ytm create trigger</code></pre>
+
+      <p>Or create manually:</p>
+
+      <div class="code-filename">yourtm/triggers/button-click.ts</div>
+      <pre><code class="language-typescript">import { defineTrigger } from '@yourtm/core'
+
+export default defineTrigger({
+  name: 'CTA Button Click',
+  type: 'click',
+  config: {
+    selector: '.cta-button',
+    waitForAllClicks: false,
+  },
+})</code></pre>
+
+      <h2 id="create-zone">Create a Zone</h2>
+      <p>Zones control which tags load on which pages:</p>
+
+      <div class="code-filename">yourtm/zones/checkout.ts</div>
+      <pre><code class="language-typescript">import { defineZone } from '@yourtm/core'
+
+export default defineZone({
+  name: 'checkout',
+  description: 'Checkout and payment pages',
+  match: {
+    pathname: ['/checkout/*', '/payment/*', '/order/confirm'],
+  },
+})</code></pre>
+
+      <h2 id="build">Build Your Container</h2>
+      <p>Compile your tags into optimized bundles:</p>
+      <pre><code class="language-bash">ytm build</code></pre>
+
+      <p>Output:</p>
+      <pre>Building YourTM Container
+-------------------------
+
+- Loading configuration...
+  Container ID  YTM-MYSITE
+  Environment   development
+  Minify        true
+  Sourcemaps    false
+
+✔ Build completed successfully!
+
+  Tags      4
+  Triggers  3
+  Zones     3
+  Bundles   4
+
+  Bundle Sizes:
+
+  core.js                 2.06 KB
+  zone-global.js          1.92 KB
+  zone-checkout.js          635 B
+  zone-product.js           229 B
+--------------------------------------------------
+  Total                   4.83 KB
+
+✔ Bundle size within budget: 4.83 KB / 100 KB</pre>
+
+      <h2 id="local-testing">Local Testing</h2>
+      <p>Start the development server with hot reload:</p>
+      <pre><code class="language-bash">ytm dev</code></pre>
+
+      <p>This starts a local server that:</p>
+      <ul>
+        <li>Serves your bundles at <code>http://localhost:3456</code></li>
+        <li>Watches for file changes and rebuilds automatically</li>
+        <li>Provides a debug panel for testing tag firing</li>
+      </ul>
+
+      <p>Add the script tag to your site:</p>
+      <pre><code class="language-html">&lt;script src="http://localhost:3456/ytm/core.js"&gt;&lt;/script&gt;</code></pre>
+
+      <h2 id="deploy">Deploy to the Edge</h2>
+      <p>First, set up your Cloudflare infrastructure:</p>
+      <pre><code class="language-bash">ytm deploy init</code></pre>
+
+      <p>This interactive command will:</p>
+      <ol>
+        <li>Prompt for your Cloudflare API credentials</li>
+        <li>Create an R2 bucket for storing bundles</li>
+        <li>Enable public CDN access</li>
+        <li>Save configuration to <code>yourtm.config.ts</code></li>
+      </ol>
+
+      <p>Then deploy your bundles:</p>
+      <pre><code class="language-bash">ytm build && ytm deploy -e production</code></pre>
+
+      <div class="alert alert-success">
+        <strong>You're live!</strong> Your tags are now served from Cloudflare's global edge network.
+        Update your script tag to use your worker URL.
+      </div>
+
+      <h2>Next Steps</h2>
+      <ul>
+        <li><a href="concepts.html">Learn about Tags, Triggers, and Zones</a></li>
+        <li><a href="cloudflare.html">Detailed Cloudflare Setup Guide</a></li>
+        <li><a href="commands.html">Explore all CLI commands</a></li>
+      </ul>
+
+      <footer>
+        <p>
+          YourTM CLI is open source.
+          <a href="https://github.com/yourtm/yourtm-cli" target="_blank">View on GitHub</a>
+        </p>
+      </footer>
+    </main>
+  </div>
+  <!-- Prism.js syntax highlighting -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body>
+</html>

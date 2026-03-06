@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloudflare Setup - YourTM CLI</title>
+  <!-- Prism.js syntax highlighting -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-primary: #0a0a0a;
+      --bg-secondary: #141414;
+      --bg-tertiary: #1a1a1a;
+      --text-primary: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --accent-purple: #a855f7;
+      --accent-pink: #ec4899;
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-yellow: #f59e0b;
+      --accent-orange: #f97316;
+      --accent-red: #ef4444;
+      --border-color: #27272a;
+      --code-bg: #18181b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+
+    a {
+      color: var(--accent-cyan);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Navigation */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: rgba(10, 10, 10, 0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border-color);
+      z-index: 100;
+      padding: 0 2rem;
+    }
+
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover,
+    .nav-links a.active {
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    /* Layout */
+    .page-container {
+      display: flex;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding-top: 64px;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 280px;
+      min-width: 280px;
+      padding: 2rem;
+      border-right: 1px solid var(--border-color);
+      position: sticky;
+      top: 64px;
+      height: calc(100vh - 64px);
+      overflow-y: auto;
+    }
+
+    .sidebar-section {
+      margin-bottom: 2rem;
+    }
+
+    .sidebar-section h4 {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+    }
+
+    .sidebar-section ul {
+      list-style: none;
+    }
+
+    .sidebar-section li {
+      margin-bottom: 0.25rem;
+    }
+
+    .sidebar-section a {
+      color: var(--text-secondary);
+      display: block;
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+
+    .sidebar-section a:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    .sidebar-section a.active {
+      background: var(--bg-tertiary);
+      color: var(--accent-cyan);
+    }
+
+    /* Content */
+    .content {
+      flex: 1;
+      padding: 3rem 4rem;
+      max-width: 900px;
+    }
+
+    .content h1 {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .content .lead {
+      font-size: 1.2rem;
+      color: var(--text-secondary);
+      margin-bottom: 3rem;
+    }
+
+    .content h2 {
+      font-size: 1.75rem;
+      margin: 3rem 0 1rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .content h2:first-of-type {
+      border-top: none;
+      padding-top: 0;
+      margin-top: 0;
+    }
+
+    .content h3 {
+      font-size: 1.25rem;
+      margin: 2rem 0 1rem;
+    }
+
+    .content p {
+      margin-bottom: 1rem;
+      color: var(--text-secondary);
+    }
+
+    .content ul, .content ol {
+      margin-bottom: 1rem;
+      padding-left: 1.5rem;
+      color: var(--text-secondary);
+    }
+
+    .content li {
+      margin-bottom: 0.5rem;
+    }
+
+    /* Code blocks - Override Prism theme */
+    pre[class*="language-"],
+    code[class*="language-"] {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      background: var(--code-bg) !important;
+      text-shadow: none !important;
+    }
+
+    pre[class*="language-"] {
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0 1.5rem;
+      overflow-x: auto;
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0 1.5rem;
+      overflow-x: auto;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.9em;
+      background: var(--code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 4px;
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+    }
+
+    /* Prism token colors for dark theme */
+    .token.comment,
+    .token.prolog,
+    .token.doctype,
+    .token.cdata { color: #6a737d; }
+    .token.punctuation { color: #a1a1aa; }
+    .token.property,
+    .token.tag,
+    .token.boolean,
+    .token.number,
+    .token.constant,
+    .token.symbol,
+    .token.deleted { color: #f97316; }
+    .token.selector,
+    .token.attr-name,
+    .token.string,
+    .token.char,
+    .token.builtin,
+    .token.inserted { color: #10b981; }
+    .token.operator,
+    .token.entity,
+    .token.url,
+    .language-css .token.string,
+    .style .token.string { color: #06b6d4; }
+    .token.atrule,
+    .token.attr-value,
+    .token.keyword { color: #a855f7; }
+    .token.function,
+    .token.class-name { color: #ec4899; }
+    .token.regex,
+    .token.important,
+    .token.variable { color: #f59e0b; }
+
+    .code-filename {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-bottom: none;
+      border-radius: 8px 8px 0 0;
+      padding: 0.5rem 1rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 1rem;
+    }
+
+    .code-filename + pre {
+      border-radius: 0 0 8px 8px;
+      margin-top: 0;
+    }
+
+    /* Alerts */
+    .alert {
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      margin: 1.5rem 0;
+      border: 1px solid;
+    }
+
+    .alert-info {
+      background: rgba(6, 182, 212, 0.1);
+      border-color: rgba(6, 182, 212, 0.3);
+    }
+
+    .alert-info::before {
+      content: "ℹ️ ";
+    }
+
+    .alert-warning {
+      background: rgba(245, 158, 11, 0.1);
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+
+    .alert-warning::before {
+      content: "⚠️ ";
+    }
+
+    .alert-success {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    .alert-success::before {
+      content: "✅ ";
+    }
+
+    .alert-danger {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
+    .alert-danger::before {
+      content: "🚨 ";
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    th {
+      background: var(--bg-tertiary);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    td {
+      color: var(--text-secondary);
+    }
+
+    /* Steps */
+    .step-box {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin: 1.5rem 0;
+    }
+
+    .step-box h4 {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .step-number {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    .step-box img {
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      margin: 1rem 0;
+    }
+
+    /* Permission badges */
+    .permission {
+      display: inline-block;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.85rem;
+      font-family: 'SF Mono', monospace;
+      margin: 0.25rem;
+    }
+
+    .permission.required {
+      border-color: var(--accent-orange);
+      color: var(--accent-orange);
+    }
+
+    /* Architecture diagram */
+    .architecture {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 2rem;
+      margin: 2rem 0;
+      font-family: 'SF Mono', monospace;
+      font-size: 0.9rem;
+      line-height: 1.8;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      margin-top: 4rem;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .sidebar {
+        display: none;
+      }
+
+      .content {
+        padding: 2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="nav-container">
+      <a href="index.html" class="logo">YourTM</a>
+      <ul class="nav-links">
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="concepts.html">Concepts</a></li>
+        <li><a href="cloudflare.html" class="active">Cloudflare Setup</a></li>
+        <li><a href="commands.html">Commands</a></li>
+        <li><a href="https://github.com/yourtm/yourtm-cli" target="_blank">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="page-container">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <h4>Overview</h4>
+        <ul>
+          <li><a href="#architecture">Architecture</a></li>
+          <li><a href="#requirements">Requirements</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <h4>Setup</h4>
+        <ul>
+          <li><a href="#create-account">Create Account</a></li>
+          <li><a href="#api-token">Create API Token</a></li>
+          <li><a href="#deploy-init">Run Deploy Init</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <h4>Configuration</h4>
+        <ul>
+          <li><a href="#config-file">Config File</a></li>
+          <li><a href="#credentials">Credentials</a></li>
+          <li><a href="#environments">Environments</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <h4>Operations</h4>
+        <ul>
+          <li><a href="#deploying">Deploying</a></li>
+          <li><a href="#rollback">Rollback</a></li>
+          <li><a href="#custom-domain">Custom Domain</a></li>
+          <li><a href="#troubleshooting">Troubleshooting</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="content">
+      <h1>Cloudflare Setup</h1>
+      <p class="lead">
+        Deploy your tag bundles to Cloudflare's global edge network for
+        sub-millisecond latency and infinite scalability.
+      </p>
+
+      <h2 id="architecture">Architecture</h2>
+      <p>YourTM uses Cloudflare R2 (object storage) for maximum performance and cost efficiency:</p>
+
+      <div class="architecture">
+┌─────────────────────────────────────────────────────────────────┐
+│                        Your Website                              │
+│  &lt;script src="https://cdn.yourdomain.com/latest/core.js"&gt;      │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Cloudflare Edge (300+ PoPs)                   │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │              R2 Public Bucket (Static CDN)               │    │
+│  │  • Serves bundles directly from edge cache               │    │
+│  │  • No Worker invocations for static files                │    │
+│  │  • Immutable versioned URLs: /v/20240315.1423/core.js    │    │
+│  │  • Latest URLs: /latest/core.js                          │    │
+│  │  • ~5-20ms global latency                                │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │              Worker (API Only - Optional)                │    │
+│  │  • Telemetry endpoint: /_ytm/telemetry                   │    │
+│  │  • Preview mode: /_ytm/preview                           │    │
+│  │  • Health checks: /health                                │    │
+│  │  • Only invoked for API calls, not static files          │    │
+│  └─────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘</div>
+
+      <h3>Why R2 Instead of Workers + KV?</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>R2 (New)</th>
+            <th>Workers + KV (Legacy)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Bundle Requests</strong></td>
+            <td>Direct from CDN cache</td>
+            <td>Worker invocation per request</td>
+          </tr>
+          <tr>
+            <td><strong>Cost at Scale</strong></td>
+            <td>~$0.015/million requests</td>
+            <td>~$0.50/million requests</td>
+          </tr>
+          <tr>
+            <td><strong>Latency</strong></td>
+            <td>~5-20ms (edge cached)</td>
+            <td>~10-50ms (Worker + KV)</td>
+          </tr>
+          <tr>
+            <td><strong>Free Tier Usage</strong></td>
+            <td>Bundles don't count</td>
+            <td>100k/day limit applies</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Key Benefits</h3>
+      <ul>
+        <li><strong>Global Distribution</strong> - 300+ edge locations worldwide</li>
+        <li><strong>Lowest Latency</strong> - Direct CDN cache, no Worker overhead</li>
+        <li><strong>Cost Efficient</strong> - No Worker invocations for static bundles</li>
+        <li><strong>Infinite Scale</strong> - Handles billions of requests</li>
+        <li><strong>99.99% Uptime SLA</strong> - Enterprise-grade reliability</li>
+        <li><strong>Free Tier Friendly</strong> - R2 has generous free tier (10GB storage, 10M reads/month)</li>
+      </ul>
+
+      <h2 id="requirements">Requirements</h2>
+      <p>To deploy to Cloudflare, you'll need:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Requirement</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Cloudflare Account</td>
+            <td>Free or paid account at <a href="https://dash.cloudflare.com/sign-up" target="_blank">dash.cloudflare.com</a></td>
+          </tr>
+          <tr>
+            <td>Workers Enabled</td>
+            <td>Workers are enabled by default on all accounts</td>
+          </tr>
+          <tr>
+            <td>API Token</td>
+            <td>Token with Workers and KV permissions</td>
+          </tr>
+          <tr>
+            <td>Account ID</td>
+            <td>Found in your Cloudflare dashboard sidebar</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="pricing">Cloudflare Pricing</h2>
+      <p>With R2 architecture, YourTM is extremely cost-effective:</p>
+
+      <h3>R2 Storage (Static Bundles)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Resource</th>
+            <th>Free Tier</th>
+            <th>Paid</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Storage</strong></td>
+            <td>10 GB/month</td>
+            <td>$0.015/GB/month</td>
+          </tr>
+          <tr>
+            <td><strong>Class A ops (writes)</strong></td>
+            <td>1M/month</td>
+            <td>$4.50/million</td>
+          </tr>
+          <tr>
+            <td><strong>Class B ops (reads)</strong></td>
+            <td>10M/month</td>
+            <td>$0.36/million</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Workers (API Only - Optional)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Resource</th>
+            <th>Free Tier</th>
+            <th>Paid ($5/mo)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Requests</strong></td>
+            <td>100,000/day</td>
+            <td>10M/month</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="alert alert-success">
+        <strong>Cost Example:</strong> A site with 1 million daily page views:<br>
+        • <strong>R2 reads:</strong> ~1M/day × 30 = 30M/month = $10.80/month<br>
+        • <strong>Worker API:</strong> Telemetry only = minimal usage<br>
+        • <strong>Total:</strong> ~$11/month (vs ~$15-25 with Workers + KV)
+      </div>
+
+      <div class="alert alert-info">
+        For most websites, the free tier is sufficient. A site with 100,000 daily page views
+        uses only ~3M R2 reads/month — well within the free 10M/month allowance.
+      </div>
+
+      <h2 id="create-account">Step 1: Create a Cloudflare Account</h2>
+      <p>If you don't have a Cloudflare account:</p>
+
+      <div class="step-box">
+        <h4><span class="step-number">1</span> Sign up at Cloudflare</h4>
+        <p>Go to <a href="https://dash.cloudflare.com/sign-up" target="_blank">dash.cloudflare.com/sign-up</a> and create a free account.</p>
+      </div>
+
+      <div class="step-box">
+        <h4><span class="step-number">2</span> Find your Account ID</h4>
+        <p>After logging in, your Account ID is displayed in the right sidebar of the dashboard. It looks like: <code>a1b2c3d4e5f6g7h8i9j0...</code></p>
+        <p>You can also find it in the URL: <code>dash.cloudflare.com/<strong>ACCOUNT_ID</strong>/...</code></p>
+      </div>
+
+      <h2 id="api-token">Step 2: Create an API Token</h2>
+      <p>YourTM needs an API token to deploy Workers and manage KV storage.</p>
+
+      <div class="step-box">
+        <h4><span class="step-number">1</span> Go to API Tokens</h4>
+        <p>Navigate to <strong>My Profile → API Tokens</strong> or go directly to:</p>
+        <pre>https://dash.cloudflare.com/profile/api-tokens</pre>
+      </div>
+
+      <div class="step-box">
+        <h4><span class="step-number">2</span> Create Custom Token</h4>
+        <p>Click <strong>"Create Token"</strong>, then <strong>"Create Custom Token"</strong>.</p>
+      </div>
+
+      <div class="step-box">
+        <h4><span class="step-number">3</span> Configure Permissions</h4>
+        <p>Set the following permissions:</p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Permission</th>
+              <th>Access Level</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="permission required">Account → R2 Storage</span></td>
+              <td>Edit</td>
+              <td>Create buckets, upload bundles</td>
+            </tr>
+            <tr>
+              <td><span class="permission">Account → Workers Scripts</span></td>
+              <td>Edit</td>
+              <td>Optional: Deploy API worker (telemetry)</td>
+            </tr>
+            <tr>
+              <td><span class="permission">Account → Workers KV Storage</span></td>
+              <td>Edit</td>
+              <td>Optional: Legacy mode or metadata</td>
+            </tr>
+            <tr>
+              <td><span class="permission">Zone → Workers Routes</span></td>
+              <td>Edit</td>
+              <td>Optional: Custom domain routing</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="alert alert-warning">
+          <strong>Account Resources:</strong> Select "Include → All accounts" or your specific account.
+        </div>
+      </div>
+
+      <div class="step-box">
+        <h4><span class="step-number">4</span> Copy the Token</h4>
+        <p>After creating, copy the token immediately. It won't be shown again!</p>
+        <p>The token looks like: <code>Abc123XyzLongTokenString...</code></p>
+      </div>
+
+      <h2 id="deploy-init">Step 3: Run Deploy Init</h2>
+      <p>The <code>ytm deploy init</code> command sets up everything automatically:</p>
+
+      <pre>ytm deploy init</pre>
+
+      <p>The interactive wizard will prompt you:</p>
+
+      <pre>🚀 YourTM Cloudflare Setup
+──────────────────────────────
+
+  Container ID   YTM-MYSITE
+  Container Name My Website Tags
+
+? Cloudflare Account ID: a1b2c3d4e5f6g7h8i9j0
+? Cloudflare API Token: ****************************
+
+✔ API token validated
+
+? Which environment(s) to set up?
+  ❯ Production only
+    Staging only
+    Both (staging + production)
+
+? Storage mode for tag bundles:
+  ❯ R2 Bucket (Recommended) - Fast CDN delivery, no Worker invocations
+    KV Namespace (Legacy)   - Worker serves all requests
+
+✔ Created R2 bucket "ytm-mysite"
+✔ Public access enabled: https://pub-a1b2c3d4.r2.dev/ytm-mysite
+
+? Deploy API worker for telemetry and preview mode? (optional) No
+
+✔ Updated yourtm.config.ts
+
+🎉 Cloudflare setup complete!
+
+Created resources:
+  R2 Bucket: ytm-mysite
+    Public URL: https://pub-a1b2c3d4.r2.dev/ytm-mysite
+
+Add this to your site:
+  &lt;script src="https://pub-a1b2c3d4.r2.dev/ytm-mysite/latest/core.js" async&gt;&lt;/script&gt;
+
+Architecture:
+  • Static bundles served from R2 CDN (fast, low cost)
+  • No Worker invocations for bundle requests
+
+Next steps:
+  1. Run 'ytm build' to compile your tags
+  2. Run 'ytm deploy' to publish to Cloudflare</pre>
+
+      <h3>Command Options</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Option</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>--account-id &lt;id&gt;</code></td>
+            <td>Cloudflare Account ID (skip prompt)</td>
+          </tr>
+          <tr>
+            <td><code>--api-token &lt;token&gt;</code></td>
+            <td>Cloudflare API Token (skip prompt)</td>
+          </tr>
+          <tr>
+            <td><code>--r2-bucket &lt;name&gt;</code></td>
+            <td>Custom R2 bucket name</td>
+          </tr>
+          <tr>
+            <td><code>--r2-domain &lt;domain&gt;</code></td>
+            <td>Custom domain for R2 (e.g., cdn.yourdomain.com)</td>
+          </tr>
+          <tr>
+            <td><code>--worker-name &lt;name&gt;</code></td>
+            <td>Custom worker name (for API worker)</td>
+          </tr>
+          <tr>
+            <td><code>--env &lt;environment&gt;</code></td>
+            <td>staging, production, or both</td>
+          </tr>
+          <tr>
+            <td><code>--skip-worker</code></td>
+            <td>Skip deploying the API worker</td>
+          </tr>
+          <tr>
+            <td><code>--legacy-kv</code></td>
+            <td>Use legacy KV-only mode (not recommended)</td>
+          </tr>
+          <tr>
+            <td><code>--save-credentials</code></td>
+            <td>Save to ~/.yourtm/credentials.json</td>
+          </tr>
+          <tr>
+            <td><code>-y, --yes</code></td>
+            <td>Skip confirmation prompts</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>CI/CD Setup</h3>
+      <p>For automated deployments, use environment variables or flags:</p>
+
+      <pre>ytm deploy init \
+  --account-id $CLOUDFLARE_ACCOUNT_ID \
+  --api-token $CLOUDFLARE_API_TOKEN \
+  --env production \
+  --yes</pre>
+
+      <h2 id="config-file">Configuration File</h2>
+      <p>After running <code>deploy init</code>, your config is updated:</p>
+
+      <div class="code-filename">yourtm.config.ts</div>
+      <pre><code class="language-typescript">import { defineConfig } from '@yourtm/core'
+
+export default defineConfig({
+  container: {
+    id: 'YTM-MYSITE',
+    name: 'My Website Tags',
+  },
+
+  // Cloudflare configuration (added by deploy init)
+  cloudflare: {
+    accountId: 'a1b2c3d4e5f6g7h8i9j0',
+    // R2 bucket for static bundles (recommended)
+    r2BucketName: 'ytm-mysite',
+    r2PublicUrl: 'https://pub-a1b2c3d4.r2.dev/ytm-mysite',
+    // Optional: Custom domain
+    // r2PublicUrl: 'https://cdn.mysite.com',
+    // Optional: Worker for API (telemetry, preview)
+    // workerUrl: 'https://ytm-api.workers.dev',
+  },
+})</code></pre>
+
+      <h3>Legacy KV Configuration</h3>
+      <p>If using legacy KV mode (<code>--legacy-kv</code>):</p>
+
+      <div class="code-filename">yourtm.config.ts</div>
+      <pre><code class="language-typescript">  cloudflare: {
+    accountId: 'a1b2c3d4e5f6g7h8i9j0',
+    workerName: 'yourtm-cdn',
+    kvNamespaceId: 'kv-namespace-id-production',
+  },</code></pre>
+
+      <h2 id="credentials">Credentials Storage</h2>
+      <p>YourTM looks for credentials in this order:</p>
+
+      <ol>
+        <li><strong>Environment Variables</strong> (recommended for CI/CD)
+          <pre><code class="language-bash">export CLOUDFLARE_API_TOKEN="your-token"
+export CLOUDFLARE_ACCOUNT_ID="your-account-id"</code></pre>
+        </li>
+        <li><strong>Credentials File</strong> (for local development)
+          <div class="code-filename">~/.yourtm/credentials.json</div>
+          <pre><code class="language-json">{
+  "cloudflare": {
+    "apiToken": "your-token",
+    "accountId": "your-account-id"
+  }
+}</code></pre>
+        </li>
+        <li><strong>Config File</strong> (not recommended for tokens)
+          <pre><code class="language-typescript">cloudflare: {
+  accountId: 'your-account-id',
+  // Don't put apiToken in config - use env vars
+}</code></pre>
+        </li>
+      </ol>
+
+      <div class="alert alert-danger">
+        <strong>Security Warning:</strong> Never commit API tokens to git.
+        Use environment variables or the credentials file.
+      </div>
+
+      <h2 id="environments">Multiple Environments</h2>
+      <p>YourTM supports staging and production environments with separate storage:</p>
+
+      <pre><code class="language-bash"># Set up both environments
+ytm deploy init --env both
+
+# Deploy to staging first
+ytm deploy -e staging
+
+# Then promote to production
+ytm deploy -e production</code></pre>
+
+      <p>Each environment has its own:</p>
+      <ul>
+        <li>KV namespace (isolated storage)</li>
+        <li>Version history</li>
+        <li>Rollback capability</li>
+      </ul>
+
+      <h2 id="deploying">Deploying</h2>
+      <p>After initial setup, deploy with:</p>
+
+      <pre><code class="language-bash"># Build and deploy to staging
+ytm build && ytm deploy -e staging
+
+# Deploy to production
+ytm deploy -e production
+
+# Deploy with a message
+ytm deploy -e production -m "Added TikTok pixel"</code></pre>
+
+      <p>Deploy output:</p>
+
+      <pre>Deploying to production...
+──────────────────────────────
+
+  Container     YTM-MYSITE
+  Environment   production
+  Version       v1.2.3
+
+Uploading bundles:
+  ✔ core.js                 2.06 KB
+  ✔ zone-global.js          1.92 KB
+  ✔ zone-checkout.js          635 B
+  ✔ zone-product.js           229 B
+
+✔ Deploy successful!
+
+  CDN URL: https://yourtm-cdn.your.workers.dev/c/YTM-MYSITE/core.js
+  Version: v1.2.3
+  Time:    1.2s</pre>
+
+      <h2 id="rollback">Rollback</h2>
+      <p>If something goes wrong, rollback instantly:</p>
+
+      <pre><code class="language-bash"># Quick rollback to previous version
+ytm rollback quick -e production
+
+# Rollback to specific version
+ytm rollback v1.2.2 -e production
+
+# View version history
+ytm deploy versions -e production</code></pre>
+
+      <h2 id="custom-domain">Custom Domain</h2>
+      <p>By default, your bundles are served from:</p>
+      <pre>https://yourtm-cdn.YOUR_SUBDOMAIN.workers.dev/c/CONTAINER_ID/core.js</pre>
+
+      <p>To use a custom domain like <code>cdn.yourdomain.com</code>:</p>
+
+      <div class="step-box">
+        <h4><span class="step-number">1</span> Add Domain to Cloudflare</h4>
+        <p>Your domain must be on Cloudflare (either full setup or CNAME setup).</p>
+      </div>
+
+      <div class="step-box">
+        <h4><span class="step-number">2</span> Add Worker Route</h4>
+        <p>In Cloudflare Dashboard → Workers → your worker → Triggers:</p>
+        <p>Add a route: <code>cdn.yourdomain.com/*</code></p>
+      </div>
+
+      <div class="step-box">
+        <h4><span class="step-number">3</span> Add DNS Record</h4>
+        <p>Add a CNAME or A record pointing to your workers.dev subdomain.</p>
+      </div>
+
+      <div class="step-box">
+        <h4><span class="step-number">4</span> Update Script Tag</h4>
+        <pre><code class="language-html">&lt;script src="https://cdn.yourdomain.com/latest/core.js"&gt;&lt;/script&gt;</code></pre>
+      </div>
+
+      <h2 id="troubleshooting">Troubleshooting</h2>
+
+      <h3>Authentication Errors</h3>
+      <pre>Error: Authentication failed (10000)</pre>
+      <p><strong>Solution:</strong> Check that your API token has the correct permissions and hasn't expired.</p>
+
+      <h3>KV Namespace Not Found</h3>
+      <pre>Error: KV namespace not found</pre>
+      <p><strong>Solution:</strong> Run <code>ytm deploy init</code> again or check that the namespace ID in config is correct.</p>
+
+      <h3>Worker Deploy Failed</h3>
+      <pre>Error: Worker upload failed</pre>
+      <p><strong>Solutions:</strong></p>
+      <ul>
+        <li>Check your Workers quota (free tier: 100,000 requests/day)</li>
+        <li>Ensure "Workers Scripts: Edit" permission is set</li>
+        <li>Try deploying with <code>--skip-worker</code> and deploy worker manually</li>
+      </ul>
+
+      <h3>Slow Response Times</h3>
+      <p>If bundle loading is slow:</p>
+      <ul>
+        <li>Check bundle sizes with <code>ytm build</code></li>
+        <li>Ensure caching headers are working (check response headers)</li>
+        <li>Verify you're loading from the edge (check CF-Ray header)</li>
+      </ul>
+
+      <h3>Getting Help</h3>
+      <p>If you're still having issues:</p>
+      <ul>
+        <li><a href="https://github.com/yourtm/yourtm-cli/issues" target="_blank">Open a GitHub issue</a></li>
+        <li>Include output of <code>ytm status</code> and <code>ytm deploy versions</code></li>
+      </ul>
+
+      <footer>
+        <p>
+          YourTM CLI is open source.
+          <a href="https://github.com/yourtm/yourtm-cli" target="_blank">View on GitHub</a>
+        </p>
+      </footer>
+    </main>
+  </div>
+  <!-- Prism.js syntax highlighting -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body>
+</html>

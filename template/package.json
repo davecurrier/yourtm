@@ -1,0 +1,17 @@
+{
+  "name": "ytm-example",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "ytm build",
+    "dev": "ytm dev",
+    "check": "ytm check"
+  },
+  "dependencies": {
+    "@yourtm/cli": "*",
+    "@yourtm/core": "*",
+    "@yourtm/runtime": "*",
+    "@yourtm/vendors": "*"
+  }
+}

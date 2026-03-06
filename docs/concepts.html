@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Concepts - YourTM CLI</title>
+  <style>
+    :root {
+      --bg-primary: #0a0a0a;
+      --bg-secondary: #141414;
+      --bg-tertiary: #1a1a1a;
+      --text-primary: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --accent-purple: #a855f7;
+      --accent-pink: #ec4899;
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-yellow: #f59e0b;
+      --accent-orange: #f97316;
+      --accent-red: #ef4444;
+      --border-color: #27272a;
+      --code-bg: #18181b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+
+    a {
+      color: var(--accent-cyan);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Navigation */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: rgba(10, 10, 10, 0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border-color);
+      z-index: 100;
+      padding: 0 2rem;
+    }
+
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover,
+    .nav-links a.active {
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    /* Layout */
+    .page-container {
+      display: flex;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding-top: 64px;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 280px;
+      min-width: 280px;
+      padding: 2rem;
+      border-right: 1px solid var(--border-color);
+      position: sticky;
+      top: 64px;
+      height: calc(100vh - 64px);
+      overflow-y: auto;
+    }
+
+    .sidebar-section {
+      margin-bottom: 2rem;
+    }
+
+    .sidebar-section h4 {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+    }
+
+    .sidebar-section ul {
+      list-style: none;
+    }
+
+    .sidebar-section li {
+      margin-bottom: 0.25rem;
+    }
+
+    .sidebar-section a {
+      color: var(--text-secondary);
+      display: block;
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+
+    .sidebar-section a:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    /* Content */
+    .content {
+      flex: 1;
+      padding: 3rem 4rem;
+      max-width: 900px;
+    }
+
+    .content h1 {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .content .lead {
+      font-size: 1.2rem;
+      color: var(--text-secondary);
+      margin-bottom: 3rem;
+    }
+
+    .content h2 {
+      font-size: 1.75rem;
+      margin: 3rem 0 1rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .content h2:first-of-type {
+      border-top: none;
+      padding-top: 0;
+      margin-top: 0;
+    }
+
+    .content h3 {
+      font-size: 1.25rem;
+      margin: 2rem 0 1rem;
+    }
+
+    .content p {
+      margin-bottom: 1rem;
+      color: var(--text-secondary);
+    }
+
+    .content ul, .content ol {
+      margin-bottom: 1rem;
+      padding-left: 1.5rem;
+      color: var(--text-secondary);
+    }
+
+    .content li {
+      margin-bottom: 0.5rem;
+    }
+
+    /* Code blocks */
+    pre[class*="language-"] {
+      background: var(--code-bg) !important;
+      border: 1px solid var(--border-color) !important;
+      border-radius: 8px !important;
+      padding: 1rem 1.25rem !important;
+      margin: 1rem 0 1.5rem !important;
+      overflow-x: auto;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
+      font-size: 0.9rem !important;
+      line-height: 1.6 !important;
+    }
+
+    code[class*="language-"] {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace !important;
+      text-shadow: none !important;
+      color: var(--text-primary) !important;
+    }
+
+    .code-filename {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-bottom: none;
+      border-radius: 8px 8px 0 0;
+      padding: 0.5rem 1rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 1rem;
+    }
+
+    .code-filename + pre[class*="language-"] {
+      border-radius: 0 0 8px 8px !important;
+      margin-top: 0 !important;
+    }
+
+    /* Concept cards */
+    .concept-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin: 1.5rem 0;
+    }
+
+    .concept-card h3 {
+      margin: 0 0 0.5rem 0;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .concept-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+
+    .icon-tag {
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+    }
+
+    .icon-trigger {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green));
+    }
+
+    .icon-zone {
+      background: linear-gradient(135deg, var(--accent-yellow), var(--accent-orange));
+    }
+
+    /* Diagram */
+    .diagram {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 2rem;
+      margin: 2rem 0;
+      font-family: 'SF Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    /* Property list */
+    .prop-list {
+      margin: 1rem 0;
+    }
+
+    .prop-item {
+      display: flex;
+      gap: 1rem;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .prop-item:last-child {
+      border-bottom: none;
+    }
+
+    .prop-name {
+      font-family: 'SF Mono', monospace;
+      color: var(--accent-cyan);
+      min-width: 140px;
+    }
+
+    .prop-type {
+      font-family: 'SF Mono', monospace;
+      color: var(--accent-purple);
+      font-size: 0.85em;
+      min-width: 120px;
+    }
+
+    .prop-desc {
+      color: var(--text-secondary);
+    }
+
+    /* Alert */
+    .alert {
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      margin: 1.5rem 0;
+      border: 1px solid;
+    }
+
+    .alert-info {
+      background: rgba(6, 182, 212, 0.1);
+      border-color: rgba(6, 182, 212, 0.3);
+    }
+
+    .alert-info::before {
+      content: "💡 ";
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      margin-top: 4rem;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .sidebar {
+        display: none;
+      }
+
+      .content {
+        padding: 2rem;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+  <nav>
+    <div class="nav-container">
+      <a href="index.html" class="logo">YourTM</a>
+      <ul class="nav-links">
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="concepts.html" class="active">Concepts</a></li>
+        <li><a href="cloudflare.html">Cloudflare Setup</a></li>
+        <li><a href="commands.html">Commands</a></li>
+        <li><a href="https://github.com/yourtm/yourtm-cli" target="_blank">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="page-container">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <h4>Core Concepts</h4>
+        <ul>
+          <li><a href="#overview">Overview</a></li>
+          <li><a href="#tags">Tags</a></li>
+          <li><a href="#triggers">Triggers</a></li>
+          <li><a href="#zones">Zones</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <h4>Advanced</h4>
+        <ul>
+          <li><a href="#consent">Consent Management</a></li>
+          <li><a href="#data-layer">Data Layer</a></li>
+          <li><a href="#context">Execution Context</a></li>
+          <li><a href="#lifecycle">Tag Lifecycle</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <h4>Architecture</h4>
+        <ul>
+          <li><a href="#bundles">Bundles</a></li>
+          <li><a href="#runtime">Runtime</a></li>
+          <li><a href="#performance">Performance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="content">
+      <h1>Concepts</h1>
+      <p class="lead">
+        Understanding Tags, Triggers, and Zones — the building blocks of YourTM.
+      </p>
+
+      <h2 id="overview">Overview</h2>
+      <p>
+        YourTM uses three core concepts to manage tracking and analytics on your website:
+      </p>
+
+      <div class="diagram">
+┌─────────────────────────────────────────────────────────────────────┐
+│                          Your Website                                │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         YourTM Runtime                               │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
+│  │     ZONES       │  │    TRIGGERS     │  │        TAGS         │  │
+│  │                 │  │                 │  │                     │  │
+│  │  Which pages?   │──│  When to fire?  │──│  What to execute?   │  │
+│  │                 │  │                 │  │                     │  │
+│  │  • global       │  │  • page-load    │  │  • GA4 Pageview     │  │
+│  │  • checkout     │  │  • click        │  │  • Meta Pixel       │  │
+│  │  • product      │  │  • scroll       │  │  • Custom tracking  │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘</div>
+
+      <h2 id="tags">Tags</h2>
+      <p>
+        Tags are the code that gets executed when certain conditions are met. They typically
+        send data to analytics platforms, load third-party scripts, or perform custom tracking.
+      </p>
+
+      <div class="concept-card">
+        <h3><span class="concept-icon icon-tag">T</span> What is a Tag?</h3>
+        <p>
+          A tag is a TypeScript module that defines tracking behavior. It specifies
+          <em>what</em> code to run, <em>when</em> to run it (triggers), and <em>where</em>
+          to load it (zones).
+        </p>
+      </div>
+
+      <h3>Tag Structure</h3>
+      <div class="code-filename">yourtm/tags/ga4-pageview.ts</div>
+      <pre><code class="language-typescript">import { defineTag } from '@yourtm/core'
+
+export default defineTag({
+  // Identification
+  name: 'GA4 Pageview',
+  description: 'Track page views in Google Analytics 4',
+
+  // When to fire
+  triggers: ['page-load'],
+
+  // Where to load
+  zones: ['global'],
+
+  // Required consent
+  consent: ['analytics'],
+
+  // Priority (higher = fires first)
+  priority: 100,
+
+  // One-time setup (loads external scripts)
+  async setup() {
+    const script = document.createElement('script')
+    script.src = 'https://www.googletagmanager.com/gtag/js?id=G-XXXXX'
+    script.async = true
+    document.head.appendChild(script)
+
+    window.dataLayer = window.dataLayer || []
+    window.gtag = function() { dataLayer.push(arguments) }
+    window.gtag('js', new Date())
+  },
+
+  // Runs every time the trigger fires
+  execute(ctx) {
+    window.gtag('config', 'G-XXXXX', {
+      page_title: ctx.dataLayer?.page?.title || document.title,
+      page_location: ctx.url.href,
+    })
+  },
+})</code></pre>
+
+      <h3>Tag Properties</h3>
+      <div class="prop-list">
+        <div class="prop-item">
+          <span class="prop-name">name</span>
+          <span class="prop-type">string</span>
+          <span class="prop-desc">Human-readable name for the tag</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">description</span>
+          <span class="prop-type">string?</span>
+          <span class="prop-desc">Optional description of what the tag does</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">triggers</span>
+          <span class="prop-type">string[]</span>
+          <span class="prop-desc">Array of trigger IDs that fire this tag</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">zones</span>
+          <span class="prop-type">string[]</span>
+          <span class="prop-desc">Array of zone IDs where this tag loads</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">consent</span>
+          <span class="prop-type">string[]?</span>
+          <span class="prop-desc">Required consent categories (e.g., ['analytics'])</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">priority</span>
+          <span class="prop-type">number?</span>
+          <span class="prop-desc">Execution priority (0-100, higher fires first)</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">setup</span>
+          <span class="prop-type">() => void?</span>
+          <span class="prop-desc">One-time initialization (load scripts, etc.)</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">execute</span>
+          <span class="prop-type">(ctx) => void</span>
+          <span class="prop-desc">Called each time the trigger fires</span>
+        </div>
+      </div>
+
+      <h2 id="triggers">Triggers</h2>
+      <p>
+        Triggers define <em>when</em> tags should fire. They listen for specific events
+        on the page and activate associated tags when conditions are met.
+      </p>
+
+      <div class="concept-card">
+        <h3><span class="concept-icon icon-trigger">⚡</span> What is a Trigger?</h3>
+        <p>
+          A trigger listens for browser events (page load, clicks, scrolls, etc.) and
+          fires tags when the event occurs. Multiple tags can share the same trigger.
+        </p>
+      </div>
+
+      <h3>Built-in Trigger Types</h3>
+      <div class="prop-list">
+        <div class="prop-item">
+          <span class="prop-name">pageview</span>
+          <span class="prop-type">PageviewTrigger</span>
+          <span class="prop-desc">Fires on page load or virtual page views</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">click</span>
+          <span class="prop-type">ClickTrigger</span>
+          <span class="prop-desc">Fires when elements matching a selector are clicked</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">scroll</span>
+          <span class="prop-type">ScrollTrigger</span>
+          <span class="prop-desc">Fires at specific scroll depth percentages</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">visibility</span>
+          <span class="prop-type">VisibilityTrigger</span>
+          <span class="prop-desc">Fires when elements become visible in viewport</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">timer</span>
+          <span class="prop-type">TimerTrigger</span>
+          <span class="prop-desc">Fires after a specified time delay</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">form</span>
+          <span class="prop-type">FormTrigger</span>
+          <span class="prop-desc">Fires on form submission</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">custom</span>
+          <span class="prop-type">CustomTrigger</span>
+          <span class="prop-desc">Fires on custom dataLayer events</span>
+        </div>
+      </div>
+
+      <h3>Trigger Examples</h3>
+      <div class="code-filename">yourtm/triggers/scroll-75.ts</div>
+      <pre><code class="language-typescript">import { defineTrigger } from '@yourtm/core'
+
+export default defineTrigger({
+  name: 'Scroll 75%',
+  type: 'scroll',
+  config: {
+    threshold: 75,    // Fire at 75% scroll depth
+    once: true,       // Only fire once per page
+  },
+})</code></pre>
+
+      <div class="code-filename">yourtm/triggers/add-to-cart.ts</div>
+      <pre><code class="language-typescript">import { defineTrigger } from '@yourtm/core'
+
+export default defineTrigger({
+  name: 'Add to Cart Click',
+  type: 'click',
+  config: {
+    selector: '[data-action="add-to-cart"], .add-to-cart-btn',
+    checkChildElements: true,  // Include clicks on child elements
+  },
+})</code></pre>
+
+      <div class="code-filename">yourtm/triggers/form-submit.ts</div>
+      <pre><code class="language-typescript">import { defineTrigger } from '@yourtm/core'
+
+export default defineTrigger({
+  name: 'Contact Form Submit',
+  type: 'form',
+  config: {
+    selector: '#contact-form',
+    waitForValidation: true,
+  },
+})</code></pre>
+
+      <h2 id="zones">Zones</h2>
+      <p>
+        Zones define <em>where</em> tags should load. They segment your website into
+        logical areas, ensuring only relevant tags are loaded on each page.
+      </p>
+
+      <div class="concept-card">
+        <h3><span class="concept-icon icon-zone">📍</span> What is a Zone?</h3>
+        <p>
+          A zone is a collection of pages defined by URL patterns. Tags specify which
+          zones they belong to, and only load on pages that match those zones.
+          This keeps bundles small and performant.
+        </p>
+      </div>
+
+      <div class="alert alert-info">
+        <strong>The "Load vs. Fire" Distinction:</strong>
+        <p>
+          It's important to understand the difference between a <strong>Zone</strong> and a <strong>Trigger</strong>:
+        </p>
+        <ul>
+          <li><strong>Zones (Load):</strong> Control which JavaScript bundles are downloaded by the browser. A zone like <code>checkout</code> ensures checkout-related tags only load when a user is in the checkout flow.</li>
+          <li><strong>Triggers (Fire):</strong> Control when a loaded tag actually executes its code (e.g., on a specific button click or a specific pageview within that zone).</li>
+        </ul>
+        <p>
+          By separating these, YourTM achieves superior performance. For example, you can bundle all checkout tags into one file (Zone: <code>/checkout/**</code>) but only fire the "Purchase" tag on the final step (Trigger: <code>/checkout/success</code>).
+        </p>
+      </div>
+
+      <h3>Zone Structure</h3>
+      <div class="code-filename">yourtm/zones/checkout.ts</div>
+      <pre><code class="language-typescript">import { defineZone } from '@yourtm/core'
+
+export default defineZone({
+  name: 'checkout',
+  description: 'Checkout and payment flow pages',
+  match: {
+    // Match any of these pathname patterns
+    pathname: [
+      '/checkout',
+      '/checkout/*',
+      '/cart',
+      '/payment/*',
+      '/order/confirmation',
+    ],
+  },
+})</code></pre>
+
+      <h3>URL Matching</h3>
+      <p>Zones support glob-style URL pattern matching:</p>
+
+      <div class="prop-list">
+        <div class="prop-item">
+          <span class="prop-name">/checkout</span>
+          <span class="prop-type">exact</span>
+          <span class="prop-desc">Matches exactly /checkout</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">/checkout/*</span>
+          <span class="prop-type">wildcard</span>
+          <span class="prop-desc">Matches /checkout/shipping, /checkout/payment, etc.</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">/products/**</span>
+          <span class="prop-type">deep wildcard</span>
+          <span class="prop-desc">Matches any depth under /products</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">/blog/:slug</span>
+          <span class="prop-type">parameter</span>
+          <span class="prop-desc">Matches /blog/my-post, /blog/another-post</span>
+        </div>
+      </div>
+
+      <h3>Common Zones</h3>
+      <div class="code-filename">yourtm/zones/global.ts</div>
+      <pre><code class="language-typescript">import { defineZone } from '@yourtm/core'
+
+export default defineZone({
+  name: 'global',
+  description: 'Loads on all pages',
+  match: {
+    pathname: ['**'],  // Match everything
+  },
+})</code></pre>
+
+      <div class="code-filename">yourtm/zones/product.ts</div>
+      <pre><code class="language-typescript">import { defineZone } from '@yourtm/core'
+
+export default defineZone({
+  name: 'product',
+  description: 'Product detail pages',
+  match: {
+    pathname: ['/products/*', '/p/*', '/item/*'],
+  },
+})</code></pre>
+
+      <h2 id="consent">Consent Management</h2>
+      <p>
+        YourTM has built-in consent management. Tags specify which consent categories
+        they require, and only fire when the user has granted that consent.
+      </p>
+
+      <h3>Consent Categories</h3>
+      <div class="prop-list">
+        <div class="prop-item">
+          <span class="prop-name">necessary</span>
+          <span class="prop-type">always on</span>
+          <span class="prop-desc">Essential functionality (session, security)</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">analytics</span>
+          <span class="prop-type">optional</span>
+          <span class="prop-desc">Usage analytics (GA4, Mixpanel, etc.)</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">marketing</span>
+          <span class="prop-type">optional</span>
+          <span class="prop-desc">Advertising and remarketing pixels</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">preferences</span>
+          <span class="prop-type">optional</span>
+          <span class="prop-desc">Personalization and preferences</span>
+        </div>
+      </div>
+
+      <h3>Setting Consent</h3>
+      <pre><code class="language-javascript">// In your consent banner / CMP integration
+window.YTM.setConsent({
+  necessary: true,
+  analytics: true,
+  marketing: false,
+  preferences: true,
+})</code></pre>
+
+      <h3>Tag with Consent</h3>
+      <pre><code class="language-typescript">export default defineTag({
+  name: 'Meta Pixel',
+  triggers: ['page-load'],
+  zones: ['global'],
+  consent: ['marketing'],  // Only fires if marketing consent granted
+  execute(ctx) {
+    fbq('track', 'PageView')
+  },
+})</code></pre>
+
+      <h2 id="data-layer">Data Layer</h2>
+      <p>
+        The data layer is a JavaScript object that stores page and event data.
+        Tags can read from it to send enriched data to analytics platforms.
+      </p>
+
+      <h3>Pushing to Data Layer</h3>
+      <pre><code class="language-javascript">// On your website
+window.YTM.push({
+  event: 'purchase',
+  ecommerce: {
+    transaction_id: 'T12345',
+    value: 99.99,
+    currency: 'USD',
+    items: [
+      { item_id: 'SKU123', item_name: 'Widget', price: 99.99 }
+    ]
+  }
+})</code></pre>
+
+      <h3>Reading in Tags</h3>
+      <pre><code class="language-typescript">export default defineTag({
+  name: 'GA4 Purchase',
+  triggers: ['purchase-event'],
+  execute(ctx) {
+    const { transaction_id, value, currency, items } = ctx.dataLayer.ecommerce
+    gtag('event', 'purchase', {
+      transaction_id,
+      value,
+      currency,
+      items,
+    })
+  },
+})</code></pre>
+
+      <h2 id="context">Execution Context</h2>
+      <p>
+        Every tag's <code>execute()</code> function receives a context object with
+        useful information about the current page and event.
+      </p>
+
+      <h3>Context Properties</h3>
+      <div class="prop-list">
+        <div class="prop-item">
+          <span class="prop-name">ctx.url</span>
+          <span class="prop-type">URL</span>
+          <span class="prop-desc">Current page URL object (href, pathname, search, etc.)</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">ctx.dataLayer</span>
+          <span class="prop-type">object</span>
+          <span class="prop-desc">Current data layer state</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">ctx.event</span>
+          <span class="prop-type">Event?</span>
+          <span class="prop-desc">Browser event that triggered (for click, form, etc.)</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">ctx.element</span>
+          <span class="prop-type">Element?</span>
+          <span class="prop-desc">DOM element that triggered (for click, visibility, etc.)</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">ctx.consent</span>
+          <span class="prop-type">object</span>
+          <span class="prop-desc">Current consent state</span>
+        </div>
+      </div>
+
+      <h2 id="lifecycle">Tag Lifecycle</h2>
+      <p>
+        Understanding the tag lifecycle helps you write efficient tags.
+      </p>
+
+      <div class="diagram">
+Page Load
+    │
+    ▼
+┌─────────────────┐
+│  Load core.js   │  (~2KB runtime)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Match Zones    │  Determine which zone bundles to load
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Load zone-*.js │  Load only matching zone bundles
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Register Tags  │  Add tags to runtime
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Run setup()    │  One-time initialization (load scripts)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Wait Trigger   │  Listen for trigger events
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    │ Trigger │
+    └────┬────┘
+         │
+         ▼
+┌─────────────────┐
+│ Check Consent   │  Verify required consent granted
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    │ Granted │
+    └────┬────┘
+         │
+         ▼
+┌─────────────────┐
+│ Run execute()   │  Execute tag code
+└─────────────────┘</div>
+
+      <h2 id="bundles">Bundle Architecture</h2>
+      <p>
+        YourTM compiles your tags into optimized JavaScript bundles, organized by zone.
+      </p>
+
+      <h3>Bundle Types</h3>
+      <div class="prop-list">
+        <div class="prop-item">
+          <span class="prop-name">core.js</span>
+          <span class="prop-type">~2KB</span>
+          <span class="prop-desc">Runtime engine, trigger system, consent management</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">zone-global.js</span>
+          <span class="prop-type">varies</span>
+          <span class="prop-desc">Tags in the global zone (loaded on all pages)</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">zone-checkout.js</span>
+          <span class="prop-type">varies</span>
+          <span class="prop-desc">Tags only needed on checkout pages</span>
+        </div>
+        <div class="prop-item">
+          <span class="prop-name">zone-product.js</span>
+          <span class="prop-type">varies</span>
+          <span class="prop-desc">Tags only needed on product pages</span>
+        </div>
+      </div>
+
+      <div class="alert alert-info">
+        <strong>Tip:</strong> Use zones strategically to keep bundles small. A checkout-only
+        conversion pixel doesn't need to load on your blog pages.
+      </div>
+
+      <h2 id="runtime">Runtime</h2>
+      <p>
+        The YourTM runtime is a lightweight JavaScript engine that manages tag execution.
+      </p>
+
+      <h3>Runtime API</h3>
+      <pre><code class="language-javascript">// Available on window.YTM
+
+// Initialize (called automatically)
+YTM.init()
+
+// Register a tag (called by zone bundles)
+YTM.registerTag(tagDefinition)
+
+// Set consent state
+YTM.setConsent({ analytics: true, marketing: false })
+
+// Push to data layer
+YTM.push({ event: 'purchase', value: 99 })
+
+// Access internal state (for debugging)
+YTM._state.tags       // Map of registered tags
+YTM._state.triggers   // Map of registered triggers
+YTM._state.consent    // Current consent state</code></pre>
+
+      <h2 id="performance">Performance</h2>
+      <p>
+        YourTM is designed for maximum performance with minimal impact on your site.
+      </p>
+
+      <h3>Performance Features</h3>
+      <ul>
+        <li><strong>Tiny runtime</strong> — Core is ~2KB gzipped vs GTM's 50-80KB</li>
+        <li><strong>Zone-based chunking</strong> — Only load tags needed for current page</li>
+        <li><strong>Tree shaking</strong> — Unused code eliminated at build time</li>
+        <li><strong>Edge caching</strong> — Bundles served from Cloudflare's global CDN</li>
+        <li><strong>Async loading</strong> — Non-blocking script loading</li>
+        <li><strong>Event delegation</strong> — Single listener handles multiple triggers</li>
+      </ul>
+
+      <h3>Performance Budgets</h3>
+      <p>Configure budgets in <code>yourtm.config.ts</code>:</p>
+      <pre><code class="language-typescript">budgets: {
+  maxBundleSize: 100_000,   // 100KB total
+  maxTagSize: 10_000,       // 10KB per tag
+  warnOnSlowTags: 100,      // Warn if tag takes >100ms
+}</code></pre>
+
+      <footer>
+        <p>
+          YourTM CLI is open source.
+          <a href="https://github.com/yourtm/yourtm-cli" target="_blank">View on GitHub</a>
+        </p>
+      </footer>
+    </main>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+</body>
+</html>
