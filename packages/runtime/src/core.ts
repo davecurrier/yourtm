@@ -143,28 +143,12 @@ export async function executeTag(
   // Check consent
   if (tag.consent?.length && !tag.consent.every(hasConsent)) return null;
 
-  // Lazy variables resolver via Proxy
-  const resolvedVars: Record<string, any> = {};
-  const variablesProxy = new Proxy({}, {
-    get: (target, prop: string) => {
-      if (prop in resolvedVars) return resolvedVariables[prop];
-      
-      const def = variables.get(prop);
-      if (!def) return undefined;
-
-      // Note: This is synchronous in the proxy getter, but resolveVariable 
-      // is async. We'll handle this by pre-resolving or allowing async tags.
-      // For now, we return the cached value or a promise.
-      // Better approach for production: pre-resolve all variables used by the tag.
-      return resolvedVars[prop];
-    }
-  });
-
-  // Resolve all variables for the tag context (Simple approach first)
+  // Resolve variables for the tag context (Lazy resolution via Proxy)
   const tagVariables: Record<string, any> = {};
-  for (const [name, def] of variables.entries()) {
-    tagVariables[name] = await resolveVariable(def, variables, tagVariables);
-  }
+  const resolvePromises = Array.from(variables.values()).map(async (def) => {
+    tagVariables[def.name] = await resolveVariable(def, variables, tagVariables);
+  });
+  await Promise.all(resolvePromises);
 
   const fullCtx: TagContext = {
     dataLayer: (window as unknown as { dataLayer: Record<string, unknown> }).dataLayer || {},
