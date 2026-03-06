@@ -1,6 +1,8 @@
 {
   "name": "yourtm-cli",
   "version": "0.1.0",
+  "author": "David Currier",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "workspaces": [

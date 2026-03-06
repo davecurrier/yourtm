@@ -116,4 +116,6 @@ yourtm-cli/
 
 ## License
 
-MIT
+Distributed under the MIT License. See `LICENSE` for more information.
+
+Copyright (c) 2024-2026 David Currier
