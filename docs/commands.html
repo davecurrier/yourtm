@@ -483,7 +483,7 @@
         <ul>
           <li><a href="#init">init</a></li>
           <li><a href="#create">create</a></li>
-          <li><a href="#check">check</a></li>
+          <li><a href="#audit">audit</a></li>
         </ul>
       </div>
       <div class="sidebar-section">
@@ -662,13 +662,13 @@ ytm create tag -p google -n "GA4 Pageview"</code></pre>
         </div>
       </div>
 
-      <div class="command-card" id="check">
+      <div class="command-card" id="audit">
         <div class="command-header">
-          <h3>ytm check</h3>
+          <h3>ytm audit</h3>
           <span class="badge badge-core">Core</span>
         </div>
-        <p class="description">Validate configuration and check for issues in your project.</p>
-        <pre><code class="language-bash">ytm check [options]</code></pre>
+        <p class="description">Perform a deep system audit to detect redundancy (DRY), performance bottlenecks, and best practice violations.</p>
+        <pre><code class="language-bash">ytm audit [options]</code></pre>
 
         <table class="options-table">
           <thead>
@@ -681,7 +681,7 @@ ytm create tag -p google -n "GA4 Pageview"</code></pre>
           <tbody>
             <tr>
               <td>--fix</td>
-              <td>Automatically fix issues where possible</td>
+              <td>Automatically fix simple issues where possible</td>
               <td>false</td>
             </tr>
           </tbody>
@@ -689,11 +689,11 @@ ytm create tag -p google -n "GA4 Pageview"</code></pre>
 
         <div class="examples">
           <h4>Examples</h4>
-          <pre><code class="language-bash"># Check for issues
-ytm check
+          <pre><code class="language-bash"># Run system-wide audit
+ytm audit
 
-# Check and auto-fix
-ytm check --fix</code></pre>
+# Audit and attempt auto-fixes
+ytm audit --fix</code></pre>
         </div>
       </div>
 

@@ -7,7 +7,7 @@ import { logger } from './utils/logger.js';
 import { setupCommand } from './commands/setup.js';
 import { initCommand } from './commands/init.js';
 import { buildCommand } from './commands/build.js';
-import { checkCommand } from './commands/check.js';
+import { auditCommand } from './commands/audit.js';
 import { devCommand } from './commands/dev.js';
 import { testCommand, watchCommand, diffCommand } from './commands/test.js';
 import { deployCommand, statusCommand, versionsCommand } from './commands/deploy.js';
@@ -53,13 +53,13 @@ program
     await buildCommand(options);
   });
 
-// Check command
+// Audit command
 program
-  .command('check')
-  .description('Validate configuration and check for issues')
+  .command('audit')
+  .description('Perform system audit (redundancy, performance, best practices)')
   .option('--fix', 'Automatically fix issues where possible')
   .action(async (options) => {
-    await checkCommand(options);
+    await auditCommand(options);
   });
 
 // Dev command
