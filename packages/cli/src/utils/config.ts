@@ -88,9 +88,19 @@ async function loadTypeScriptConfig(
     format: 'esm',
     write: false,
     target: 'node18',
+    external: ['@yourtm/core', '@yourtm/vendors', '@yourtm/runtime'],
   });
 
-  const code = result.outputFiles[0].text;
+  // Inject shim for @yourtm/core since it's external
+  // defineConfig is just a pass-through type helper
+  const shim = `
+const defineConfig = (config) => config;
+`;
+
+  let code = result.outputFiles[0].text;
+
+  // Remove the external import and inject our shim
+  code = code.replace(/import\s*\{[^}]*\}\s*from\s*["']@yourtm\/core["'];?/g, shim);
 
   // Write to a temp file and import it
   const tempPath = join(dirname(configPath), '.yourtm.config.mjs');
@@ -123,19 +133,20 @@ function validateConfig(config: unknown, cwd: string): YourTMConfig {
     throw new Error('Config must include a containerId string');
   }
 
+  // Support both flat config and nested build config
+  const buildConfig = c.build as Record<string, unknown> | undefined;
+
   // Apply defaults and resolve paths
   const resolved: YourTMConfig = {
     containerId: c.containerId,
-    containerName: c.containerName as string | undefined,
+    containerName: (c.containerName || c.name) as string | undefined,
     tagsDir: resolvePath(cwd, (c.tagsDir as string) || 'yourtm/tags'),
     triggersDir: resolvePath(cwd, (c.triggersDir as string) || 'yourtm/triggers'),
     zonesDir: resolvePath(cwd, (c.zonesDir as string) || 'yourtm/zones'),
-    variablesDir: c.variablesDir
-      ? resolvePath(cwd, c.variablesDir as string)
-      : undefined,
-    outDir: resolvePath(cwd, (c.outDir as string) || 'dist/ytm'),
-    minify: c.minify !== false,
-    sourcemap: c.sourcemap === true,
+    variablesDir: resolvePath(cwd, (c.variablesDir as string) || 'yourtm/variables'),
+    outDir: resolvePath(cwd, (c.outDir as string) || (buildConfig?.outDir as string) || 'dist/ytm'),
+    minify: c.minify !== false && buildConfig?.minify !== false,
+    sourcemap: c.sourcemap === true || buildConfig?.sourcemap === true,
     environment: (c.environment as YourTMConfig['environment']) || 'development',
     devServer: {
       port: (c.devServer as Record<string, unknown>)?.port as number || 3456,

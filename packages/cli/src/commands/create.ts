@@ -172,7 +172,8 @@ async function createTag(
   const templates = allTagTemplates.filter(t => {
     const tPlatform = 'platform' in t ? t.platform : undefined;
     if (platform === 'custom') return tPlatform === 'custom' || !tPlatform;
-    if (platform === 'google') return tPlatform === 'google';
+    // Google includes both google-analytics and google-ads platforms
+    if (platform === 'google') return tPlatform === 'google-analytics' || tPlatform === 'google-ads';
     if (platform === 'ecommerce') return t.category === 'ecommerce';
     return tPlatform === platform;
   });

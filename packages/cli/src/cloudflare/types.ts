@@ -225,6 +225,7 @@ export interface DeployInitOptions {
 
 export interface DeployOptions {
   env?: 'development' | 'staging' | 'production';
+  version?: string;
   dryRun?: boolean;
   force?: boolean;
   message?: string;

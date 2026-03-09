@@ -21,6 +21,7 @@ export interface TagDefinition {
   consent?: string[];
   platform?: string;
   vendor?: string;
+  sourcePath?: string; // Path to the source file, relative to project root
 }
 
 export interface TriggerDefinition {
@@ -46,6 +47,15 @@ export interface ZoneDefinition {
   priority?: number;
 }
 
+export interface VariableDefinition {
+  id: string;
+  name: string;
+  type: 'dataLayer' | 'cookie' | 'url' | 'custom' | 'constant';
+  key?: string;
+  value?: unknown;
+  getter?: () => unknown;
+}
+
 export interface CompiledBundle {
   name: string;
   code: string;
@@ -59,6 +69,7 @@ export interface CompileResult {
   tags: TagDefinition[];
   triggers: TriggerDefinition[];
   zones: ZoneDefinition[];
+  variables: VariableDefinition[];
   errors: CompileError[];
   warnings: string[];
 }
@@ -75,6 +86,7 @@ export class Compiler {
   private tags: Map<string, TagDefinition> = new Map();
   private triggers: Map<string, TriggerDefinition> = new Map();
   private zones: Map<string, ZoneDefinition> = new Map();
+  private variables: Map<string, VariableDefinition> = new Map();
   private errors: CompileError[] = [];
   private warnings: string[] = [];
 
@@ -82,7 +94,7 @@ export class Compiler {
     this.config = config;
   }
 
-  async compile(): Promise<CompileResult> {
+  async compile(options: { skipBundles?: boolean } = {}): Promise<CompileResult> {
     this.tags.clear();
     this.triggers.clear();
     this.zones.clear();
@@ -93,9 +105,23 @@ export class Compiler {
     await this.loadTriggers();
     await this.loadTags();
     await this.loadZones();
+    await this.loadVariables();
 
     // Validate references
     this.validateReferences();
+
+    // For analysis/audit, we may want to skip bundle generation and just return what we loaded
+    if (options.skipBundles) {
+      return {
+        bundles: [],
+        tags: Array.from(this.tags.values()),
+        triggers: Array.from(this.triggers.values()),
+        zones: Array.from(this.zones.values()),
+        variables: Array.from(this.variables.values()),
+        errors: this.errors,
+        warnings: this.warnings,
+      };
+    }
 
     if (this.errors.length > 0) {
       return {
@@ -103,6 +129,7 @@ export class Compiler {
         tags: [],
         triggers: [],
         zones: [],
+        variables: [],
         errors: this.errors,
         warnings: this.warnings,
       };
@@ -116,6 +143,7 @@ export class Compiler {
       tags: Array.from(this.tags.values()),
       triggers: Array.from(this.triggers.values()),
       zones: Array.from(this.zones.values()),
+      variables: Array.from(this.variables.values()),
       errors: this.errors,
       warnings: this.warnings,
     };
@@ -164,6 +192,8 @@ export class Compiler {
           'tag'
         );
         if (tag) {
+          // Store the relative source path (e.g., "yourtm/tags/my-tag.ts")
+          tag.sourcePath = join('yourtm/tags', file);
           this.tags.set(tag.id, tag);
         }
       } catch (error) {
@@ -202,6 +232,132 @@ export class Compiler {
     }
   }
 
+  private async loadVariables(): Promise<void> {
+    const variablesDir = this.config.variablesDir;
+    if (!variablesDir || !existsSync(variablesDir)) {
+      // Variables are optional, no warning needed
+      return;
+    }
+
+    const files = await glob('**/*.{ts,js}', { cwd: variablesDir });
+
+    for (const file of files) {
+      try {
+        const variables = await this.loadVariableDefinitions(
+          join(variablesDir, file)
+        );
+        for (const variable of variables) {
+          this.variables.set(variable.id, variable);
+        }
+      } catch (error) {
+        this.errors.push({
+          file: join(variablesDir, file),
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  private async loadVariableDefinitions(filepath: string): Promise<VariableDefinition[]> {
+    if (!existsSync(filepath)) {
+      return [];
+    }
+
+    // Compile TypeScript to JavaScript
+    const result = await esbuild.build({
+      entryPoints: [filepath],
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      write: false,
+      target: 'node18',
+      external: ['@yourtm/core', '@yourtm/vendors', '@yourtm/runtime'],
+    });
+
+    // Inject shims for @yourtm/core helpers since they're external
+    const shim = `
+const defineVariable = (variable) => variable;
+const defineDataLayerVariable = (variable) => ({ ...variable, type: 'dataLayer' });
+const defineComputedVariable = (variable) => ({ ...variable, type: 'computed' });
+const defineCookieVariable = (variable) => ({ ...variable, type: 'cookie' });
+const defineURLVariable = (variable) => ({ ...variable, type: 'url' });
+const defineLocalStorageVariable = (variable) => ({ ...variable, type: 'localStorage' });
+const defineSessionStorageVariable = (variable) => ({ ...variable, type: 'sessionStorage' });
+const defineDOMElementVariable = (variable) => ({ ...variable, type: 'domElement' });
+const defineJavaScriptVariable = (variable) => ({ ...variable, type: 'javascript' });
+const defineConstantVariable = (variable) => ({ ...variable, type: 'constant' });
+const defineFirstPartyCookieVariable = (variable) => ({ ...variable, type: 'firstPartyCookie' });
+const defineCustomVariable = (variable) => ({ ...variable, type: 'custom' });
+`;
+
+    let code = result.outputFiles[0].text;
+
+    // Remove external imports and inject shims
+    code = code.replace(/import\s*\{[^}]*\}\s*from\s*["']@yourtm\/core["'];?/g, shim);
+    code = code.replace(/import\s*\{[^}]*\}\s*from\s*["']@yourtm\/vendors["'];?/g, '');
+    code = code.replace(/import\s*\{[^}]*\}\s*from\s*["']@yourtm\/runtime["'];?/g, '');
+
+    // Write to temp file and import
+    const tempDir = join(dirname(filepath), '.ytm-temp');
+    await mkdir(tempDir, { recursive: true });
+    const tempPath = join(tempDir, `${basename(filepath, '.ts')}.mjs`);
+
+    try {
+      await writeFile(tempPath, code);
+      const moduleUrl = pathToFileURL(tempPath).href + `?t=${Date.now()}`;
+      const module = await import(moduleUrl);
+
+      const variables: VariableDefinition[] = [];
+
+      // Handle multiple named exports (each export can be a variable)
+      for (const [exportName, exportValue] of Object.entries(module)) {
+        if (exportName === 'default') continue; // Skip default, process named exports
+        if (exportValue && typeof exportValue === 'object') {
+          const def = exportValue as any;
+          // Check if it looks like a variable definition
+          if (def.id || def.name) {
+            // Use name as id if id is not provided
+            if (!def.id && def.name) {
+              def.id = def.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
+            }
+            variables.push(def as VariableDefinition);
+          }
+        }
+      }
+
+      // Also check for default export (single variable or array of variables)
+      if (module.default) {
+        if (Array.isArray(module.default)) {
+          for (const def of module.default) {
+            if (def && (def.id || def.name)) {
+              if (!def.id && def.name) {
+                def.id = def.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
+              }
+              variables.push(def as VariableDefinition);
+            }
+          }
+        } else if (module.default.id || module.default.name) {
+          const def = module.default;
+          if (!def.id && def.name) {
+            def.id = def.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
+          }
+          variables.push(def as VariableDefinition);
+        }
+      }
+
+      return variables;
+    } finally {
+      // Clean up temp file
+      try {
+        const { unlink, rmdir } = await import('node:fs/promises');
+        await unlink(tempPath);
+        await rmdir(tempDir);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  }
+
   private async loadDefinition<T>(filepath: string, type: string): Promise<T | null> {
     if (!existsSync(filepath)) {
       return null;
@@ -215,9 +371,55 @@ export class Compiler {
       format: 'esm',
       write: false,
       target: 'node18',
+      external: ['@yourtm/core', '@yourtm/vendors', '@yourtm/runtime'],
     });
 
-    const code = result.outputFiles[0].text;
+    // Inject shims for @yourtm/core helpers since they're external
+    const shim = `
+const defineTag = (tag) => tag;
+const defineOnceTag = (tag) => ({ ...tag, once: true });
+const defineAsyncTag = (tag) => tag;
+const defineTrigger = (trigger) => trigger;
+const definePageviewTrigger = (trigger) => ({ ...trigger, type: 'pageview' });
+const defineDOMReadyTrigger = (trigger) => ({ ...trigger, type: 'domReady' });
+const defineWindowLoadedTrigger = (trigger) => ({ ...trigger, type: 'windowLoaded' });
+const defineClickTrigger = (trigger) => ({ ...trigger, type: 'click' });
+const defineScrollTrigger = (trigger) => ({ ...trigger, type: 'scroll' });
+const defineTimerTrigger = (trigger) => ({ ...trigger, type: 'timer' });
+const defineVisibilityTrigger = (trigger) => ({ ...trigger, type: 'visibility' });
+const defineFormSubmitTrigger = (trigger) => ({ ...trigger, type: 'form' });
+const defineDataLayerEventTrigger = (trigger) => ({ ...trigger, type: 'dataLayerEvent' });
+const defineHistoryChangeTrigger = (trigger) => ({ ...trigger, type: 'historyChange' });
+const defineYouTubeVideoTrigger = (trigger) => ({ ...trigger, type: 'youtubeVideo' });
+const defineYouTubeTrigger = (trigger) => ({ ...trigger, type: 'youtubeVideo' });
+const defineCustomTrigger = (trigger) => ({ ...trigger, type: 'custom' });
+const defineCustomEventTrigger = (trigger) => ({ ...trigger, type: 'customEvent' });
+const defineErrorTrigger = (trigger) => ({ ...trigger, type: 'error' });
+const defineConsentInitTrigger = (trigger) => ({ ...trigger, type: 'consentInit' });
+const defineInitTrigger = (trigger) => ({ ...trigger, type: 'init' });
+const defineVariable = (variable) => variable;
+const defineDataLayerVariable = (variable) => ({ ...variable, type: 'dataLayer' });
+const defineComputedVariable = (variable) => ({ ...variable, type: 'computed' });
+const defineCookieVariable = (variable) => ({ ...variable, type: 'cookie' });
+const defineURLVariable = (variable) => ({ ...variable, type: 'url' });
+const defineLocalStorageVariable = (variable) => ({ ...variable, type: 'localStorage' });
+const defineSessionStorageVariable = (variable) => ({ ...variable, type: 'sessionStorage' });
+const defineDOMElementVariable = (variable) => ({ ...variable, type: 'domElement' });
+const defineJavaScriptVariable = (variable) => ({ ...variable, type: 'javascript' });
+const defineConstantVariable = (variable) => ({ ...variable, type: 'constant' });
+const defineFirstPartyCookieVariable = (variable) => ({ ...variable, type: 'firstPartyCookie' });
+const defineCustomVariable = (variable) => ({ ...variable, type: 'custom' });
+const defineZone = (zone) => zone;
+const defineAllPagesZone = (zone) => ({ ...zone, patterns: ['*'] });
+const defineConfig = (config) => config;
+`;
+
+    let code = result.outputFiles[0].text;
+
+    // Remove external imports and inject shims
+    code = code.replace(/import\s*\{[^}]*\}\s*from\s*["']@yourtm\/core["'];?/g, shim);
+    code = code.replace(/import\s*\{[^}]*\}\s*from\s*["']@yourtm\/vendors["'];?/g, '');
+    code = code.replace(/import\s*\{[^}]*\}\s*from\s*["']@yourtm\/runtime["'];?/g, '');
 
     // Write to temp file and import
     const tempDir = join(dirname(filepath), '.ytm-temp');

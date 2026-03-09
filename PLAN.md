@@ -2,7 +2,7 @@
 
 ## Vision
 
-**Tags as Code** - A CLI-first, file-based tag management system designed for engineering teams who want tag management to feel like the rest of their toolchain.
+**High-Performance Tagging** - A performance-first tag management system designed for speed. Zero bloat, edge-deployed, and blazingly fast.
 
 No web UI. No database. No SaaS dependency. Just code, git, and a powerful CLI.
 

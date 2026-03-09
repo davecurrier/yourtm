@@ -13,9 +13,11 @@ import { devCommand } from './commands/dev.js';
 import { testCommand, watchCommand, diffCommand } from './commands/test.js';
 import { deployCommand, statusCommand, versionsCommand } from './commands/deploy.js';
 import { deployInitCommand } from './commands/deploy-init.js';
-import { rollbackCommand, quickRollbackCommand, rollbackHistoryCommand } from './commands/rollback.js';
+// Rollback is now handled by deployCommand with --version flag
 import { monitorCommand } from './commands/monitor.js';
 import { createCommand } from './commands/create.js';
+import { pushCommand, cloneCommand, pullCommand, logCommand, loginCommand } from './commands/source.js';
+import { analyzeCommand } from './commands/analyze.js';
 
 const program = new Command();
 
@@ -63,14 +65,36 @@ program
     await auditCommand(options);
   });
 
+// Analyze command (AI-powered)
+program
+  .command('analyze')
+  .description('AI-powered analysis for tag consolidation, zone optimization, and performance')
+  .option('--api-key <key>', 'API key for AI provider (or set ANTHROPIC_API_KEY/OPENAI_API_KEY)')
+  .option('-p, --provider <provider>', 'AI provider: anthropic or openai', 'anthropic')
+  .option('-o, --output <file>', 'Output analysis to file (json)')
+  .option('-v, --verbose', 'Show detailed analysis information')
+  .option('-a, --apply', 'Automatically apply recommended fixes')
+  .action(async (options) => {
+    await analyzeCommand(options);
+  });
+
 // Import command
 program
   .command('import <source> <file>')
   .description('Import tags, triggers, and variables from another platform (e.g. gtm)')
   .option('-o, --output <dir>', 'Custom output directory')
   .option('-f, --force', 'Overwrite existing files')
+  .option('--skip-zones', 'Skip AI zone discovery (use global zone for all tags)')
+  .option('--api-key <key>', 'API key for AI zone discovery (or set ANTHROPIC_API_KEY/OPENAI_API_KEY)')
+  .option('-p, --provider <provider>', 'AI provider for zone discovery: anthropic or openai', 'anthropic')
   .action(async (source, file, options) => {
-    await importCommand(source, file, options);
+    await importCommand(source, file, {
+      output: options.output,
+      force: options.force,
+      skipZoneDiscovery: options.skipZones,
+      apiKey: options.apiKey,
+      provider: options.provider,
+    });
   });
 
 // Dev command
@@ -126,14 +150,13 @@ program
 
 // Deploy command with subcommands
 const deploy = program
-  .command('deploy')
-  .description('Deploy container to YourTM CDN')
-  .option('-e, --env <environment>', 'Target environment (development, staging, production)')
+  .command('deploy [environment]')
+  .description('Deploy a pushed version to an environment')
+  .option('-v, --version <version>', 'Specific version to deploy (default: latest pushed)')
   .option('-d, --dry-run', 'Simulate deployment without making changes')
-  .option('-f, --force', 'Force deployment without approval')
-  .option('-m, --message <message>', 'Deployment message')
-  .action(async (options) => {
-    await deployCommand(options);
+  .option('-f, --force', 'Force deployment (skip checks and confirmations)')
+  .action(async (environment, options) => {
+    await deployCommand({ ...options, env: environment || 'staging' });
   });
 
 // Deploy init subcommand - Cloudflare infrastructure setup
@@ -178,40 +201,17 @@ deploy
     });
   });
 
-// Rollback command with subcommands
-const rollback = program
-  .command('rollback [version]')
-  .description('Rollback to a previous version')
-  .option('-e, --env <environment>', 'Target environment (staging, production)', 'staging')
+// Rollback command (alias for deploy --version)
+program
+  .command('rollback <version> [environment]')
+  .description('Rollback to a previous version (alias for deploy --version)')
   .option('-f, --force', 'Force rollback without confirmation')
-  .action(async (version, options) => {
-    await rollbackCommand({
+  .action(async (version, environment, options) => {
+    // Rollback is just deploying a specific version
+    await deployCommand({
       version,
-      env: options.env,
+      env: environment || 'staging',
       force: options.force,
-    });
-  });
-
-// Quick rollback to previous version
-rollback
-  .command('quick')
-  .description('Quickly rollback to the previous version')
-  .option('-e, --env <environment>', 'Target environment', 'staging')
-  .option('-f, --force', 'Force rollback without confirmation')
-  .action(async (options) => {
-    await quickRollbackCommand(options);
-  });
-
-// Rollback history
-rollback
-  .command('history')
-  .description('Show rollback history')
-  .option('-e, --env <environment>', 'Target environment', 'staging')
-  .option('-l, --limit <count>', 'Number of entries to show', '10')
-  .action(async (options) => {
-    await rollbackHistoryCommand({
-      env: options.env,
-      limit: parseInt(options.limit, 10),
     });
   });
 
@@ -286,6 +286,55 @@ create
   .option('-y, --yes', 'Skip confirmation prompts')
   .action(async (options) => {
     await createCommand('variable', options);
+  });
+
+// ============================================================================
+// Source Control Commands (git-like version control)
+// ============================================================================
+
+// Push command - upload local source to remote
+program
+  .command('push')
+  .description('Push local changes to YourTM remote')
+  .option('-m, --message <message>', 'Version message')
+  .option('-f, --force', 'Force push (overwrite remote)')
+  .action(async (options) => {
+    await pushCommand(options);
+  });
+
+// Clone command - download container source
+program
+  .command('clone <container-id>')
+  .description('Clone a container from YourTM remote')
+  .option('-b, --branch <branch>', 'Branch to clone', 'main')
+  .option('-v, --version <version>', 'Specific version to clone')
+  .action(async (containerId, options) => {
+    await cloneCommand(containerId, options);
+  });
+
+// Pull command - sync latest from remote
+program
+  .command('pull')
+  .description('Pull latest changes from YourTM remote')
+  .action(async () => {
+    await pullCommand();
+  });
+
+// Log command - show version history
+program
+  .command('log')
+  .description('Show version history')
+  .option('-n, --limit <count>', 'Number of versions to show', '10')
+  .action(async (options) => {
+    await logCommand({ limit: parseInt(options.limit, 10) });
+  });
+
+// Login command - authenticate with token
+program
+  .command('login [token]')
+  .description('Authenticate with a YourTM access token')
+  .action(async (token) => {
+    await loginCommand(token);
   });
 
 // Error handling

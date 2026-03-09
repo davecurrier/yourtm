@@ -1,11 +1,6 @@
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import { join, relative, dirname } from 'node:path';
-import { glob } from 'glob';
-import * as esbuild from 'esbuild';
 import ora from 'ora';
 import { logger } from '../utils/logger.js';
-import { loadConfig, findConfigFile } from '../utils/config.js';
+import { loadConfig } from '../utils/config.js';
 import { Compiler } from '../compiler/index.js';
 
 interface AuditOptions {
@@ -110,12 +105,47 @@ export async function auditCommand(_options: AuditOptions = {}): Promise<void> {
 }
 
 /**
+ * Common patterns that should use variables instead of direct access
+ */
+const VARIABLE_PATTERNS: Array<{ pattern: RegExp; variableName: string; description: string }> = [
+  { pattern: /document\.title/g, variableName: 'Page Title', description: 'document.title' },
+  { pattern: /window\.location\.href/g, variableName: 'Page URL', description: 'window.location.href' },
+  { pattern: /location\.href/g, variableName: 'Page URL', description: 'location.href' },
+  { pattern: /window\.location\.pathname/g, variableName: 'Page Path', description: 'window.location.pathname' },
+  { pattern: /location\.pathname/g, variableName: 'Page Path', description: 'location.pathname' },
+  { pattern: /window\.location\.hostname/g, variableName: 'Page Hostname', description: 'window.location.hostname' },
+  { pattern: /document\.referrer/g, variableName: 'Page Referrer', description: 'document.referrer' },
+];
+
+/**
  * DRY Logic: Detect multiple variables pointing to the same source
  */
 function checkRedundancy(compileResult: any, result: AuditResult): void {
-  const vars = compileResult.variables;
-  
-  // Track sources
+  const vars = compileResult.variables || [];
+  const tags = compileResult.tags || [];
+
+  // Check if tags are bypassing variables by accessing values directly
+  const availableVariables = new Set(vars.map((v: any) => v.name));
+
+  tags.forEach((tag: any) => {
+    // Get the tag's execute function as string
+    const executeCode = tag.execute?.toString() || '';
+    const setupCode = tag.setup?.toString() || '';
+    const tagCode = executeCode + setupCode;
+
+    VARIABLE_PATTERNS.forEach(({ pattern, variableName, description }) => {
+      // Only flag if we have a variable defined for this
+      if (availableVariables.has(variableName) && pattern.test(tagCode)) {
+        result.redundancy.push({
+          type: 'dry',
+          file: tag.id || tag.name,
+          message: `Tag '${tag.name}' uses ${description} directly. Consider using the '${variableName}' variable instead.`
+        });
+      }
+    });
+  });
+
+  // Track sources for variable-to-variable redundancy
   const dataLayerPaths = new Map<string, string[]>();
   const cookieNames = new Map<string, string[]>();
   const storageKeys = new Map<string, string[]>();
@@ -169,7 +199,7 @@ function checkRedundancy(compileResult: any, result: AuditResult): void {
     }
   });
 
-  functionHashes.forEach((names, hash) => {
+  functionHashes.forEach((names, _hash) => {
     if (names.length > 1) {
       result.redundancy.push({
         type: 'dry',

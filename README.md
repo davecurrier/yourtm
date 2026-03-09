@@ -1,8 +1,8 @@
 # YourTM CLI
 
-**Tags as Code** — Modern tag management for developers.
+**High-Performance Tagging** — Zero Bloat.
 
-TypeScript-first, Git-native, and blazingly fast. No web UI required.
+The modern tag management platform built for speed. TypeScript-first, edge-deployed, and blazingly fast.
 
 ```bash
 curl -fsSL https://yourtm.dev/install | bash
@@ -91,11 +91,12 @@ export default defineTag({
 ## Why YourTM?
 
 - **~5KB runtime** vs GTM's 50-80KB
-- **TypeScript** with full type safety
+- **Real-Time RUM** — Built-in Real User Monitoring & CWV tracking
+- **Live Monitoring** — Debug tags and see fires in real-time from your CLI
+- **TypeScript** with full type safety and autocomplete
 - **Git-native** — branches, PRs, CI/CD
 - **Edge deployed** — Cloudflare Workers, global CDN
-- **50+ templates** — GA4, Meta, TikTok, LinkedIn, etc.
-- **Built-in consent** — GDPR/CCPA compliant
+- **Built-in consent** — GDPR/CCPA compliant out of the box
 
 ## Documentation
 

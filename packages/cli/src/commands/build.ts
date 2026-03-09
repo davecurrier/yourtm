@@ -96,6 +96,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
       { label: 'Tags', value: String(result.tags.length) },
       { label: 'Triggers', value: String(result.triggers.length) },
       { label: 'Zones', value: String(result.zones.length) },
+      { label: 'Variables', value: String(result.variables.length) },
       { label: 'Bundles', value: String(result.bundles.length) },
     ]);
     logger.newline();

@@ -5,6 +5,10 @@
  * Handles KV namespaces, Workers, and deployments.
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+
 import type {
   CloudflareAPIResponse,
   KVNamespace,
@@ -21,6 +25,7 @@ import type {
 } from './types.js';
 
 const BASE_URL = 'https://api.cloudflare.com/client/v4';
+const DEFAULT_TIMEOUT_MS = 30000; // 30 second timeout
 
 export interface CloudflareClientOptions {
   apiToken: string;
@@ -63,9 +68,11 @@ export class CloudflareClient {
       body?: unknown;
       contentType?: string;
       formData?: FormData;
+      timeout?: number;
     } = {}
   ): Promise<T> {
     const url = `${BASE_URL}${path}`;
+    const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiToken}`,
@@ -83,11 +90,30 @@ export class CloudflareClient {
         : JSON.stringify(options.body);
     }
 
-    const response = await fetch(url, {
-      method,
-      headers,
-      body,
-    });
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method,
+        headers,
+        body,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new CloudflareAPIError(
+          `Request timed out after ${timeout / 1000}s`,
+          408
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     // Handle non-JSON responses (like KV values)
     const contentType = response.headers.get('content-type');
@@ -482,13 +508,24 @@ export class CloudflareClient {
    * Verify API token is valid
    */
   async verifyToken(): Promise<boolean> {
+    // 1. Try account-specific verification first (most robust for restricted tokens)
     try {
-      await this.get<{ id: string; status: string }>(
-        '/user/tokens/verify'
-      );
+      await this.get(`/accounts/${this.accountId}/tokens/verify`);
       return true;
     } catch {
-      return false;
+      // 2. Fallback to global verification
+      try {
+        await this.get('/user/tokens/verify');
+        return true;
+      } catch {
+        // 3. Last resort: Try fetching the account directly
+        try {
+          await this.getAccount();
+          return true;
+        } catch {
+          return false;
+        }
+      }
     }
   }
 
@@ -496,17 +533,26 @@ export class CloudflareClient {
    * Get account details
    */
   async getAccount(): Promise<{ id: string; name: string }> {
-    const accounts = await this.get<Array<{ id: string; name: string }>>(
-      '/accounts'
-    );
-    const account = accounts.find((a) => a.id === this.accountId);
-    if (!account) {
-      throw new CloudflareAPIError(
-        `Account ${this.accountId} not found or you don't have access`,
-        403
+    // Try to get the specific account directly rather than listing all
+    // This is more likely to succeed with restricted tokens
+    try {
+      return await this.get<{ id: string; name: string }>(
+        `/accounts/${this.accountId}`
       );
+    } catch {
+      // Fallback to listing accounts if direct access fails
+      const accounts = await this.get<Array<{ id: string; name: string }>>(
+        '/accounts'
+      );
+      const account = accounts.find((a) => a.id === this.accountId);
+      if (!account) {
+        throw new CloudflareAPIError(
+          `Account ${this.accountId} not found or you don't have access`,
+          403
+        );
+      }
+      return account;
     }
-    return account;
   }
 
   // ============================================
@@ -707,8 +753,8 @@ export class CloudflareClient {
         }
       );
 
-      // Get the public bucket URL
-      const bucketInfo = await this.getR2Bucket(bucketName);
+      // Get the public bucket URL (ensure bucket exists)
+      await this.getR2Bucket(bucketName);
       return {
         publicUrl: `https://pub-${this.accountId.slice(0, 8)}.r2.dev/${bucketName}`,
       };
@@ -805,20 +851,45 @@ export class CloudflareClient {
 // ============================================
 
 /**
- * Get Cloudflare credentials from environment or options
+ * Get Cloudflare credentials from environment, options, or stored credentials file
  */
 export function getCloudflareCredentials(options?: {
   token?: string;
   accountId?: string;
 }): { apiToken: string; accountId: string } | null {
-  const apiToken = options?.token || process.env.CLOUDFLARE_API_TOKEN;
-  const accountId = options?.accountId || process.env.CLOUDFLARE_ACCOUNT_ID;
-
-  if (!apiToken || !accountId) {
-    return null;
+  // Priority 1: Explicit options
+  if (options?.token && options?.accountId) {
+    return { apiToken: options.token, accountId: options.accountId };
   }
 
-  return { apiToken, accountId };
+  // Priority 2: Environment variables
+  const envToken = process.env.CLOUDFLARE_API_TOKEN;
+  const envAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (envToken && envAccountId) {
+    return { apiToken: envToken, accountId: envAccountId };
+  }
+
+  // Priority 3: Stored credentials file (~/.yourtm/credentials.json)
+  try {
+    const credentialsPath = join(homedir(), '.yourtm', 'credentials.json');
+    if (existsSync(credentialsPath)) {
+      const content = readFileSync(credentialsPath, 'utf-8');
+      const data = JSON.parse(content);
+
+      // Handle nested format from ytm setup: { cloudflare: { accountId, apiToken } }
+      if (data.cloudflare?.apiToken && data.cloudflare?.accountId) {
+        return { apiToken: data.cloudflare.apiToken, accountId: data.cloudflare.accountId };
+      }
+      // Handle flat format: { accountId, apiToken }
+      if (data.apiToken && data.accountId) {
+        return { apiToken: data.apiToken, accountId: data.accountId };
+      }
+    }
+  } catch {
+    // Ignore errors reading credentials file
+  }
+
+  return null;
 }
 
 /**

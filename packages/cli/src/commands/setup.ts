@@ -6,6 +6,7 @@
 
 import prompts from 'prompts';
 import chalk from 'chalk';
+import ora from 'ora';
 import { CloudflareClient } from '../cloudflare/api.js';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { homedir } from 'os';
@@ -93,6 +94,7 @@ const PROJECTS_PATH = join(YOURTM_HOME, 'projects');
 interface SetupOptions {
   skipWelcome?: boolean;
   reconfigure?: boolean;
+  showNextSteps?: boolean;
 }
 
 export async function setupCommand(options: SetupOptions = {}): Promise<void> {
@@ -100,7 +102,7 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
 
   // Show the beautiful logo
   console.log(logo);
-  console.log(gradient.dim('  Tags as Code • TypeScript-first • Edge Deployed\n'));
+  console.log(gradient.dim('  High-Performance • Zero Bloat • Edge Deployed\n'));
 
   // Check if already configured
   if (existsSync(CREDENTIALS_PATH) && !options.reconfigure) {
@@ -119,8 +121,7 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
     `Welcome! Let's get you set up with YourTM.\n\n` +
     `This wizard will:\n` +
     `  ${icons.arrow} Connect to your Cloudflare account\n` +
-    `  ${icons.arrow} Set up your default project location\n` +
-    `  ${icons.arrow} Deploy the CDN worker (optional)`,
+    `  ${icons.arrow} Set up your default project location`,
     gradient.white('Setup')
   ));
   console.log('');
@@ -152,7 +153,10 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
   });
 
   // Verify credentials
-  console.log(`\n  ${spinner()} Verifying credentials...`);
+  const verifySpinner = ora({
+    text: 'Verifying credentials...',
+    prefixText: ' ',
+  }).start();
 
   const api = new CloudflareClient({
     apiToken: credentials.apiToken,
@@ -162,12 +166,12 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
   try {
     const isValid = await api.verifyToken();
     if (!isValid) {
-      console.log(`  ${icons.error} Invalid credentials. Please check and try again.\n`);
+      verifySpinner.fail('Invalid credentials. Please check and try again.');
       process.exit(1);
     }
-    console.log(`  ${icons.success} Credentials verified!\n`);
+    verifySpinner.succeed('Credentials verified!');
   } catch (error) {
-    console.log(`  ${icons.error} Could not verify credentials: ${(error as Error).message}\n`);
+    verifySpinner.fail(`Could not verify credentials: ${(error as Error).message}`);
     process.exit(1);
   }
 
@@ -204,30 +208,6 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
       ? null
       : projectSettings.projectLocation;
 
-  // Deploy worker?
-  console.log(gradient.white.bold('\n  Cloudflare Worker\n'));
-  console.log(gradient.dim('  The YourTM CDN worker serves your tag bundles globally.\n'));
-
-  const workerSettings = await prompts([
-    {
-      type: 'confirm',
-      name: 'deployWorker',
-      message: 'Deploy CDN worker now?',
-      initial: true,
-    },
-    {
-      type: (prev: boolean) => prev ? 'text' : null,
-      name: 'workerName',
-      message: 'Worker name',
-      initial: 'yourtm-cdn',
-    },
-  ], {
-    onCancel: () => {
-      console.log(gradient.dim('\n  Setup cancelled.\n'));
-      process.exit(0);
-    },
-  });
-
   // Save configuration
   console.log(`\n  ${spinner()} Saving configuration...`);
 
@@ -248,45 +228,25 @@ export async function setupCommand(options: SetupOptions = {}): Promise<void> {
   // Save config
   writeFileSync(CONFIG_PATH, JSON.stringify({
     defaultProjectPath,
-    workerName: workerSettings.workerName || 'yourtm-cdn',
     version: '1.0.0',
     createdAt: new Date().toISOString(),
   }, null, 2));
 
   console.log(`  ${icons.success} Configuration saved to ~/.yourtm/\n`);
 
-  // Deploy worker if requested
-  let workerUrl = '';
-  if (workerSettings.deployWorker) {
-    console.log(`  ${spinner()} Deploying CDN worker...`);
-
-    try {
-      // Create KV namespace
-      const kvNamespace = await api.createKVNamespace(`${workerSettings.workerName}-production`);
-      console.log(`  ${icons.success} Created KV namespace: ${kvNamespace.id}\n`);
-
-      // Deploy worker
-      // Note: Full worker deployment would go here
-      // For now, we show the expected URL
-      workerUrl = `https://${workerSettings.workerName}.${credentials.accountId.slice(0, 8)}.workers.dev`;
-      console.log(`  ${icons.success} Worker deployed: ${gradient.cyan(workerUrl)}\n`);
-    } catch (error) {
-      console.log(`  ${icons.warning} Worker deployment skipped: ${(error as Error).message}`);
-      console.log(gradient.dim(`    Run ${gradient.cyan('ytm deploy init')} later to deploy.\n`));
-    }
-  }
-
   // Success message
   console.log('');
-  console.log(box(
-    `${icons.sparkle} ${gradient.white.bold('You\'re all set!')}\n\n` +
-    `  Create your first project:\n\n` +
-    `    ${gradient.cyan('ytm init')}\n\n` +
-    `  Or create a tag from template:\n\n` +
-    `    ${gradient.cyan('ytm create tag')}`,
-    gradient.green('Success')
-  ));
-  console.log('');
+  if (options.showNextSteps !== false) {
+    console.log(box(
+      `${icons.sparkle} ${gradient.white.bold('Credentials saved!')}\n\n` +
+      `  Create your first project:\n\n` +
+      `    ${gradient.cyan('ytm init')}\n\n` +
+      `  Then deploy Cloudflare infrastructure:\n\n` +
+      `    ${gradient.cyan('ytm deploy init')}`,
+      gradient.green('Success')
+    ));
+    console.log('');
+  }
 }
 
 export async function quickSetupCheck(): Promise<boolean> {
@@ -309,7 +269,7 @@ export async function quickSetupCheck(): Promise<boolean> {
   });
 
   if (runSetup) {
-    await setupCommand();
+    await setupCommand({ showNextSteps: false });
     return true;
   }
 

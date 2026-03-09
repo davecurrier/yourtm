@@ -3,8 +3,8 @@
  * Tag registration, execution, zone detection, and performance tracking
  */
 
-import type { ConsentState, ConsentCategory, VariableDefinition } from '@yourtm/core';
-import { getConsent, hasConsent } from './consent';
+import type { VariableDefinition } from '@yourtm/core';
+import { getConsent, hasConsent, type ConsentState, type ConsentCategory } from './consent';
 import { resolveVariable } from './variables';
 
 // Types
