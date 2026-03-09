@@ -10,155 +10,143 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
-NC='\033[0m' # No Color
+DIM='\033[2m'
+NC='\033[0m'
 
-# Config
-GITHUB_REPO="yourtm/yourtm-cli"
-INSTALL_DIR="${YOURTM_INSTALL_DIR:-$HOME/.yourtm}"
-BIN_DIR="$INSTALL_DIR/bin"
+GITHUB_REPO="davecurrier/yourtm-cli"
+INSTALL_DIR="$HOME/.yourtm"
 
-# Detect OS and architecture
-detect_platform() {
-  OS="$(uname -s)"
-  ARCH="$(uname -m)"
-
-  case "$OS" in
-    Linux*)  PLATFORM="linux" ;;
-    Darwin*) PLATFORM="darwin" ;;
-    MINGW*|MSYS*|CYGWIN*) PLATFORM="windows" ;;
-    *)
-      echo -e "${RED}Error: Unsupported operating system: $OS${NC}"
-      exit 1
-      ;;
-  esac
-
-  case "$ARCH" in
-    x86_64|amd64) ARCH="x64" ;;
-    arm64|aarch64) ARCH="arm64" ;;
-    *)
-      echo -e "${RED}Error: Unsupported architecture: $ARCH${NC}"
-      exit 1
-      ;;
-  esac
-
-  echo "$PLATFORM-$ARCH"
+print_banner() {
+  echo ""
+  echo -e "${BOLD}┌─────────────────────────────────────┐${NC}"
+  echo -e "${BOLD}│         ${CYAN}YourTM CLI Installer${NC}${BOLD}        │${NC}"
+  echo -e "${BOLD}└─────────────────────────────────────┘${NC}"
+  echo ""
 }
 
-# Get latest release version
-get_latest_version() {
-  curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" |
-    grep '"tag_name":' |
-    sed -E 's/.*"([^"]+)".*/\1/'
-}
-
-# Download and extract
-download_and_install() {
-  local version="$1"
-  local platform="$2"
-
-  echo -e "${CYAN}Downloading YourTM CLI ${version}...${NC}"
-
-  # Create directories
-  mkdir -p "$BIN_DIR"
-
-  # Download URL
-  local download_url="https://github.com/$GITHUB_REPO/releases/download/${version}/ytm-${platform}.tar.gz"
-
-  # Download and extract
-  if command -v curl &> /dev/null; then
-    curl -fsSL "$download_url" | tar -xz -C "$INSTALL_DIR"
-  elif command -v wget &> /dev/null; then
-    wget -qO- "$download_url" | tar -xz -C "$INSTALL_DIR"
-  else
-    echo -e "${RED}Error: curl or wget is required${NC}"
+check_requirements() {
+  # Check for Node.js
+  if ! command -v node &> /dev/null; then
+    echo -e "${RED}Error: Node.js is required but not installed.${NC}"
+    echo ""
+    echo "Install Node.js 18+ from: https://nodejs.org"
+    echo ""
     exit 1
   fi
 
-  # Make executable
-  chmod +x "$BIN_DIR/ytm"
+  # Check Node version
+  NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+  if [[ "$NODE_VERSION" -lt 18 ]]; then
+    echo -e "${RED}Error: Node.js 18+ required (found v$NODE_VERSION)${NC}"
+    echo ""
+    echo "Update Node.js from: https://nodejs.org"
+    echo ""
+    exit 1
+  fi
 
-  echo -e "${GREEN}Installed to $BIN_DIR/ytm${NC}"
+  # Check for npm
+  if ! command -v npm &> /dev/null; then
+    echo -e "${RED}Error: npm is required but not installed.${NC}"
+    exit 1
+  fi
+
+  # Check for git
+  if ! command -v git &> /dev/null; then
+    echo -e "${RED}Error: git is required but not installed.${NC}"
+    exit 1
+  fi
 }
 
-# Add to PATH
+install_cli() {
+  echo -e "${CYAN}Cloning repository...${NC}"
+
+  # Remove existing installation
+  rm -rf "$INSTALL_DIR"
+
+  # Clone the repo
+  git clone --depth 1 "https://github.com/$GITHUB_REPO.git" "$INSTALL_DIR" 2>/dev/null
+
+  echo -e "${CYAN}Installing dependencies...${NC}"
+  cd "$INSTALL_DIR"
+  npm install --silent 2>/dev/null
+
+  echo -e "${CYAN}Building...${NC}"
+  npm run build --silent 2>/dev/null
+
+  # Create bin directory and symlink
+  mkdir -p "$INSTALL_DIR/bin"
+
+  # Create wrapper script
+  cat > "$INSTALL_DIR/bin/ytm" << 'WRAPPER'
+#!/bin/bash
+exec node "$HOME/.yourtm/packages/cli/dist/bin.js" "$@"
+WRAPPER
+
+  chmod +x "$INSTALL_DIR/bin/ytm"
+}
+
 setup_path() {
-  local shell_profile=""
-  local path_export="export PATH=\"$BIN_DIR:\$PATH\""
+  local shell_config=""
+  local path_line="export PATH=\"\$HOME/.yourtm/bin:\$PATH\""
 
-  # Detect shell
-  case "$SHELL" in
-    */zsh)  shell_profile="$HOME/.zshrc" ;;
-    */bash)
-      if [[ -f "$HOME/.bashrc" ]]; then
-        shell_profile="$HOME/.bashrc"
-      elif [[ -f "$HOME/.bash_profile" ]]; then
-        shell_profile="$HOME/.bash_profile"
-      fi
-      ;;
-    */fish)
-      shell_profile="$HOME/.config/fish/config.fish"
-      path_export="set -gx PATH $BIN_DIR \$PATH"
-      ;;
-  esac
+  # Detect shell config file
+  if [[ "$SHELL" == */zsh ]]; then
+    shell_config="$HOME/.zshrc"
+  elif [[ "$SHELL" == */bash ]]; then
+    if [[ -f "$HOME/.bashrc" ]]; then
+      shell_config="$HOME/.bashrc"
+    else
+      shell_config="$HOME/.bash_profile"
+    fi
+  elif [[ "$SHELL" == */fish ]]; then
+    shell_config="$HOME/.config/fish/config.fish"
+    path_line="fish_add_path \$HOME/.yourtm/bin"
+  fi
 
-  if [[ -n "$shell_profile" ]]; then
-    # Check if already in profile
-    if ! grep -q "/.yourtm/bin" "$shell_profile" 2>/dev/null; then
-      echo "" >> "$shell_profile"
-      echo "# YourTM CLI" >> "$shell_profile"
-      echo "$path_export" >> "$shell_profile"
-      echo -e "${CYAN}Added $BIN_DIR to PATH in $shell_profile${NC}"
+  if [[ -n "$shell_config" ]]; then
+    # Only add if not already present
+    if ! grep -q "yourtm/bin" "$shell_config" 2>/dev/null; then
+      echo "" >> "$shell_config"
+      echo "# YourTM CLI" >> "$shell_config"
+      echo "$path_line" >> "$shell_config"
+      echo -e "${DIM}Added to PATH in $shell_config${NC}"
     fi
   fi
+
+  export PATH="$INSTALL_DIR/bin:$PATH"
 }
 
-# Verify installation
-verify_install() {
-  if [[ -x "$BIN_DIR/ytm" ]]; then
-    echo ""
-    echo -e "${GREEN}${BOLD}YourTM CLI installed successfully!${NC}"
-    echo ""
-    echo -e "Run ${CYAN}ytm --help${NC} to get started."
-    echo ""
-    echo -e "${YELLOW}Note: You may need to restart your terminal or run:${NC}"
-    echo -e "  ${CYAN}source ~/.zshrc${NC}  (or your shell's config file)"
-    echo ""
-  else
-    echo -e "${RED}Installation failed${NC}"
-    exit 1
-  fi
+print_success() {
+  echo ""
+  echo -e "${GREEN}${BOLD}✓ YourTM CLI installed successfully!${NC}"
+  echo ""
+  echo -e "  ${CYAN}ytm --help${NC}       Show all commands"
+  echo -e "  ${CYAN}ytm init${NC}         Create a new project"
+  echo -e "  ${CYAN}ytm create tag${NC}   Create a tag from template"
+  echo ""
+  echo -e "${YELLOW}Restart your terminal or run:${NC}"
+  echo -e "  ${CYAN}source ~/.zshrc${NC}  ${DIM}(or your shell config)${NC}"
+  echo ""
 }
 
-# Main
 main() {
-  echo ""
-  echo -e "${BOLD}YourTM CLI Installer${NC}"
-  echo "────────────────────"
-  echo ""
+  print_banner
 
-  # Check for Node.js (required for now)
-  if ! command -v node &> /dev/null; then
-    echo -e "${YELLOW}Warning: Node.js is required but not found.${NC}"
-    echo -e "Install Node.js from https://nodejs.org"
-    echo ""
-  fi
-
-  local platform=$(detect_platform)
-  echo -e "Platform: ${CYAN}$platform${NC}"
-
-  local version="${YOURTM_VERSION:-$(get_latest_version)}"
-
-  # Fallback if GitHub API fails
-  if [[ -z "$version" ]]; then
-    version="v0.1.0"
-  fi
-
-  echo -e "Version:  ${CYAN}$version${NC}"
+  echo -e "${CYAN}Checking requirements...${NC}"
+  check_requirements
+  echo -e "  ${GREEN}✓${NC} Node.js $(node -v)"
+  echo -e "  ${GREEN}✓${NC} npm $(npm -v)"
+  echo -e "  ${GREEN}✓${NC} git"
   echo ""
 
-  download_and_install "$version" "$platform"
+  install_cli
+  echo ""
+
+  echo -e "${CYAN}Configuring PATH...${NC}"
   setup_path
-  verify_install
+  echo ""
+
+  print_success
 }
 
 main "$@"
