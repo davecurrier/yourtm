@@ -601,36 +601,62 @@ async function getCredentials(options: DeployInitOptions): Promise<CloudflareCre
 
 /**
  * Validate that the API token has the required permissions
+ * Tries account-scoped token validation first, then falls back to user-scoped
  */
 async function validateApiToken(
   credentials: CloudflareCredentials
 ): Promise<{ valid: boolean; error?: string }> {
   try {
-    // Verify token
-    const verifyResponse = await fetch(`${CF_API_BASE}/user/tokens/verify`, {
-      headers: {
-        Authorization: `Bearer ${credentials.apiToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    // Try account-scoped token verification first (most common for API tokens)
+    let tokenValid = false;
 
-    if (!verifyResponse.ok) {
-      const error = await verifyResponse.json().catch(() => ({}));
-      return {
-        valid: false,
-        error: (error as { errors?: Array<{ message: string }> }).errors?.[0]?.message || 'Invalid API token',
+    const accountTokenResponse = await fetch(
+      `${CF_API_BASE}/accounts/${credentials.accountId}/tokens/verify`,
+      {
+        headers: {
+          Authorization: `Bearer ${credentials.apiToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (accountTokenResponse.ok) {
+      const data = await accountTokenResponse.json() as {
+        success: boolean;
+        result: { status: string };
       };
+      if (data.success && data.result?.status === 'active') {
+        tokenValid = true;
+      }
     }
 
-    const verifyData = await verifyResponse.json() as {
-      success: boolean;
-      result: { status: string };
-    };
-    if (!verifyData.success || verifyData.result?.status !== 'active') {
-      return {
-        valid: false,
-        error: 'API token is not active',
+    // Fall back to user-scoped token verification
+    if (!tokenValid) {
+      const userTokenResponse = await fetch(`${CF_API_BASE}/user/tokens/verify`, {
+        headers: {
+          Authorization: `Bearer ${credentials.apiToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!userTokenResponse.ok) {
+        const error = await userTokenResponse.json().catch(() => ({}));
+        return {
+          valid: false,
+          error: (error as { errors?: Array<{ message: string }> }).errors?.[0]?.message || 'Invalid API token',
+        };
+      }
+
+      const verifyData = await userTokenResponse.json() as {
+        success: boolean;
+        result: { status: string };
       };
+      if (!verifyData.success || verifyData.result?.status !== 'active') {
+        return {
+          valid: false,
+          error: 'API token is not active',
+        };
+      }
     }
 
     // Check account access
