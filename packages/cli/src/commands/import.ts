@@ -7,6 +7,8 @@ import readline from 'node:readline';
 import { logger } from '../utils/logger.js';
 import { loadConfig, type YourTMConfig } from '../utils/config.js';
 import { slugify } from '../templates/utils.js';
+import { detectVendor } from '../vendors/index.js';
+import { getAICredentials } from '../utils/global-config.js';
 
 interface ImportOptions {
   output?: string;
@@ -413,18 +415,18 @@ class GtmImporter {
    * AI-powered zone discovery based on GTM triggers
    */
   private async discoverZones(triggers: any[], tags: any[], spinner: Ora): Promise<void> {
-    // Check for API key
-    const apiKey = this.options.apiKey || process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
+    // Check for API key from options, env, or global config
+    const aiCreds = await getAICredentials();
+    const apiKey = this.options.apiKey || aiCreds.apiKey;
 
     if (!apiKey) {
       spinner.info('Skipping AI zone discovery (no API key). All tags will use "global" zone.');
-      logger.info('To enable zone discovery, set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable.');
+      logger.info('To enable zone discovery, add AI credentials to ~/.yourtm/config.json or set ANTHROPIC_API_KEY environment variable.');
       logger.newline();
       return;
     }
 
-    const provider = this.options.provider ||
-      (process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY ? 'openai' : 'anthropic');
+    const provider = this.options.provider || aiCreds.provider;
 
     spinner.start('Analyzing triggers for zone discovery...');
 
@@ -906,6 +908,7 @@ export default ${type}({
   private async importTag(gtmTag: any, allTags: any[]): Promise<void> {
     const id = slugify(gtmTag.name);
     let triggerIds = gtmTag.firingTriggerId || [];
+    const blockingTriggerIds = gtmTag.blockingTriggerId || [];
 
     // Check if this tag is used as a setup tag (fire-before) by another tag
     // If so and it has no triggers, inherit triggers from the first parent
@@ -923,7 +926,7 @@ export default ${type}({
     }
 
     // Create any built-in triggers that are referenced
-    for (const tid of triggerIds) {
+    for (const tid of [...triggerIds, ...blockingTriggerIds]) {
       if (GTM_BUILTIN_TRIGGERS[tid] && !this.createdBuiltinTriggers.has(tid)) {
         await this.createBuiltinTrigger(tid);
         this.createdBuiltinTriggers.add(tid);
@@ -931,37 +934,64 @@ export default ${type}({
     }
 
     const triggers = triggerIds.map((tid: string) => this.triggerMap.get(tid) || tid);
+    const blocking = blockingTriggerIds.map((tid: string) => this.triggerMap.get(tid) || tid);
 
     // Get dependsOn from setupTag relationships (tags that must fire before this one)
     const dependsOn = this.tagSetupDeps.get(id) || [];
 
-    let executeBody = '// Manual implementation required';
+    // Try to detect vendor and generate proper implementation
+    const vendorResult = detectVendor(gtmTag);
 
-    if (gtmTag.type === 'html') {
-      const html = gtmTag.parameter.find((p: any) => p.key === 'html')?.value || '';
-      executeBody = `// Custom HTML Tag
-    const script = document.createElement('script');
-    script.text = \`${html.replace(/\`/g, '\\`')}\`;
-    document.head.appendChild(script);`;
-    } else if (gtmTag.type === 'gaawe') {
-      executeBody = `// GA4 Event
-    // Measurement ID: ${gtmTag.parameter.find((p: any) => p.key === 'measurementId')?.value}`;
+    let executeBody: string;
+    let consent: string[] = [];
+    let description = gtmTag.name;
+
+    if (vendorResult) {
+      executeBody = vendorResult.code;
+      consent = vendorResult.consent || [];
+      description = vendorResult.description || gtmTag.name;
+    } else if (gtmTag.type === 'html') {
+      // Fallback for unrecognized HTML tags
+      const html = gtmTag.parameter?.find((p: any) => p.key === 'html')?.value || '';
+      executeBody = `// Custom HTML Tag - Review and optimize manually
+    const div = document.createElement('div');
+    div.innerHTML = \`${html.replace(/\`/g, '\\`').replace(/\$\{/g, '\\${')}\`;
+    const scripts = div.querySelectorAll('script');
+    scripts.forEach(script => {
+      const newScript = document.createElement('script');
+      if (script.src) {
+        newScript.src = script.src;
+        newScript.async = true;
+      } else {
+        newScript.textContent = script.textContent;
+      }
+      document.head.appendChild(newScript);
+    });`;
+    } else {
+      executeBody = `// Unrecognized tag type: ${gtmTag.type}
+    // Manual implementation required
+    // GTM Tag Data: ${JSON.stringify(gtmTag.parameter?.slice(0, 3) || []).replace(/"/g, "'")}`;
     }
 
     // Build optional properties
     const dependsOnLine = dependsOn.length > 0 ? `\n  dependsOn: ${JSON.stringify(dependsOn)},` : '';
+    const blockingLine = blocking.length > 0 ? `\n  blocking: ${JSON.stringify(blocking)},` : '';
+    const consentLine = consent.length > 0 ? `\n  consent: ${JSON.stringify(consent)},` : '';
 
     // Get zone from AI discovery, or default to 'global'
     const zone = this.tagZoneAssignments.get(id) || 'global';
 
     const content = `import { defineTag } from '@yourtm/core'
 
+/**
+ * ${description}
+ * Imported from GTM tag type: ${gtmTag.type}
+ */
 export default defineTag({
-  name: '${gtmTag.name}',
-  triggers: ${JSON.stringify(triggers)},${dependsOnLine}
+  name: '${gtmTag.name.replace(/'/g, "\\'")}',
+  triggers: ${JSON.stringify(triggers)},${blockingLine}${consentLine}${dependsOnLine}
   zones: ['${zone}'],
-  execute(ctx) {
-    ${executeBody}
+  execute(ctx) {${executeBody}
   }
 })
 `;
