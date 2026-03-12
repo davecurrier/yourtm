@@ -12,6 +12,8 @@ interface DevOptions {
   port?: number;
   host?: string;
   open?: boolean;
+  preview?: boolean;
+  previewEndpoint?: string;
 }
 
 interface TagFireEvent {
@@ -47,14 +49,19 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     const port = options.port || config.devServer?.port || 3456;
     const host = options.host || config.devServer?.host || 'localhost';
 
+    // Preview mode configuration
+    const previewMode = options.preview || false;
+    const previewEndpoint = options.previewEndpoint || 'http://localhost:3344/api/preview/telemetry';
+
     // Initial build
     spinner.text = 'Building container...';
     const compiler = new Compiler(config);
     let bundles = await buildAndReport(compiler);
 
     // Create HTTP server
+    const previewConfig = previewMode ? { previewMode, previewEndpoint } : null;
     const server = createServer((req, res) => {
-      handleRequest(req, res, config, bundles);
+      handleRequest(req, res, config, bundles, previewConfig);
     });
 
     // Create WebSocket server for hot reload
@@ -120,11 +127,15 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       logger.newline();
 
       const localUrl = `http://${host}:${port}`;
-      logger.table([
+      const tableRows = [
         { label: 'Local', value: localUrl },
         { label: 'Container', value: config.containerId },
-        { label: 'Mode', value: 'development' },
-      ]);
+        { label: 'Mode', value: previewMode ? 'development + preview' : 'development' },
+      ];
+      if (previewMode) {
+        tableRows.push({ label: 'Preview', value: previewEndpoint });
+      }
+      logger.table(tableRows);
       logger.newline();
 
       logger.info('Snippet to add to your HTML:');
@@ -173,14 +184,15 @@ function handleRequest(
   req: IncomingMessage,
   res: ServerResponse,
   config: YourTMConfig,
-  bundles: CompiledBundle[]
+  bundles: CompiledBundle[],
+  previewConfig: { previewMode: boolean; previewEndpoint: string } | null
 ): void {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
   const pathname = url.pathname;
 
   // CORS headers for development
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
@@ -198,7 +210,23 @@ function handleRequest(
     res.setHeader('Content-Type', MIME_TYPES[ext] || 'text/plain');
     res.setHeader('Cache-Control', 'no-cache');
     res.writeHead(200);
-    res.end(bundle.code);
+
+    // Inject preview config into core.js
+    let code = bundle.code;
+    if (filename === 'core.js' && previewConfig) {
+      // Inject preview config at the start of the bundle
+      const previewScript = `
+;(function(){
+  window.__YOURTM_PREVIEW__ = {
+    previewMode: true,
+    previewEndpoint: "${previewConfig.previewEndpoint}"
+  };
+})();
+`;
+      code = previewScript + code;
+    }
+
+    res.end(code);
     return;
   }
 

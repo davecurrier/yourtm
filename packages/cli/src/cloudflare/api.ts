@@ -441,22 +441,28 @@ export class CloudflareClient {
   ): Promise<WorkerScript> {
     const formData = new FormData();
 
-    // Add script
+    // Metadata with main_module pointing to the script and bindings
+    const metadata: Record<string, unknown> = {
+      main_module: 'worker.js',
+    };
+
+    if (bindings && bindings.length > 0) {
+      metadata.bindings = bindings;
+    }
+
+    // Add the worker script as main_module
     formData.append(
-      'script',
-      new Blob([script], { type: 'application/javascript' }),
-      'script.js'
+      'worker.js',
+      new Blob([script], { type: 'application/javascript+module' }),
+      'worker.js'
     );
 
-    // Add metadata if we have bindings
-    if (bindings && bindings.length > 0) {
-      const metadata = { bindings };
-      formData.append(
-        'metadata',
-        new Blob([JSON.stringify(metadata)], { type: 'application/json' }),
-        'metadata.json'
-      );
-    }
+    // Add metadata
+    formData.append(
+      'metadata',
+      new Blob([JSON.stringify(metadata)], { type: 'application/json' }),
+      'metadata.json'
+    );
 
     return this.put<WorkerScript>(
       `/accounts/${this.accountId}/workers/scripts/${scriptName}`,

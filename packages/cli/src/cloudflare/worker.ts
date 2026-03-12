@@ -60,8 +60,31 @@ interface CfRequest extends Request {
 // Types
 // ============================================================================
 
+interface DurableObjectNamespace {
+  idFromName(name: string): DurableObjectId;
+  get(id: DurableObjectId): DurableObjectStub;
+}
+
+interface DurableObjectId {
+  toString(): string;
+}
+
+interface DurableObjectStub {
+  fetch(request: Request | string, init?: RequestInit): Promise<Response>;
+}
+
+interface AnalyticsEngineDataset {
+  writeDataPoint(event: {
+    blobs?: string[];
+    doubles?: number[];
+    indexes?: string[];
+  }): void;
+}
+
 interface Env {
   YTM_KV: KVNamespace;
+  YTM_RUM?: DurableObjectNamespace;  // Durable Object for real-time RUM
+  YTM_ANALYTICS?: AnalyticsEngineDataset;  // Analytics Engine for historical data
   TELEMETRY_ENDPOINT?: string;
   DEBUG_SECRET?: string;
 }
@@ -83,11 +106,15 @@ interface Zone {
 interface TelemetryEvent {
   containerId: string;
   tagId: string;
+  tagName?: string;
   event: string;
   latency: number;
   success: boolean;
   error?: string;
   timestamp: number;
+  pageUrl?: string;
+  userAgent?: string;
+  trigger?: string;
 }
 
 // ============================================================================
@@ -378,34 +405,82 @@ async function handleTelemetry(
   }
 
   try {
-    const events = (await request.json()) as TelemetryEvent[];
-
-    if (!Array.isArray(events)) {
-      return errorResponse('Invalid telemetry format', request, 400);
-    }
+    const body = await request.json();
+    const events = (Array.isArray(body) ? body : [body]) as TelemetryEvent[];
 
     const cf = request.cf;
     const enrichedEvents = events.map((event) => ({
       ...event,
       receivedAt: Date.now(),
-      workerRegion: cf?.colo || 'unknown',
-      clientIp: request.headers.get('CF-Connecting-IP') || 'unknown',
+      region: cf?.colo || 'unknown',
       userAgent: request.headers.get('User-Agent') || 'unknown',
     }));
 
-    ctx.waitUntil(
-      fetch(env.TELEMETRY_ENDPOINT || CONFIG.telemetryEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(enrichedEvents),
-      }).catch((e) => {
-        if (CONFIG.debugMode) {
-          console.error('Telemetry forward failed:', e);
+    // Get container ID from first event for Durable Object routing
+    const containerId = enrichedEvents[0]?.containerId || 'default';
+
+    // Forward to Durable Object for real-time streaming (if available)
+    if (env.YTM_RUM) {
+      ctx.waitUntil(
+        (async () => {
+          try {
+            const id = env.YTM_RUM!.idFromName(containerId);
+            const stub = env.YTM_RUM!.get(id);
+            await stub.fetch('https://rum/events', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(enrichedEvents),
+            });
+          } catch (e) {
+            if (CONFIG.debugMode) {
+              console.error('RUM Durable Object error:', e);
+            }
+          }
+        })()
+      );
+    }
+
+    // Write to Analytics Engine for historical data (if available)
+    if (env.YTM_ANALYTICS) {
+      for (const event of enrichedEvents) {
+        try {
+          env.YTM_ANALYTICS.writeDataPoint({
+            blobs: [
+              event.tagId || '',
+              event.tagName || event.tagId || '',
+              containerId,
+              event.pageUrl || '',
+              event.error || '',
+            ],
+            doubles: [
+              event.latency || 0,
+              event.success ? 1 : 0,
+              event.timestamp || Date.now(),
+            ],
+            indexes: [containerId],
+          });
+        } catch (e) {
+          if (CONFIG.debugMode) {
+            console.error('Analytics Engine write error:', e);
+          }
         }
-      })
-    );
+      }
+    }
+
+    // Legacy: Forward to external endpoint if configured
+    if (env.TELEMETRY_ENDPOINT) {
+      ctx.waitUntil(
+        fetch(env.TELEMETRY_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(enrichedEvents),
+        }).catch((e) => {
+          if (CONFIG.debugMode) {
+            console.error('Telemetry forward failed:', e);
+          }
+        })
+      );
+    }
 
     return jsonResponse(
       { status: 'ok', count: enrichedEvents.length },
@@ -419,6 +494,61 @@ async function handleTelemetry(
     }
     return errorResponse('Invalid telemetry data', request, 400);
   }
+}
+
+/**
+ * Handle WebSocket connection for real-time telemetry streaming
+ */
+async function handleTelemetryStream(
+  request: CfRequest,
+  env: Env
+): Promise<Response> {
+  // Check for WebSocket upgrade
+  const upgradeHeader = request.headers.get('Upgrade');
+  if (upgradeHeader !== 'websocket') {
+    return errorResponse('Expected WebSocket upgrade', request, 426);
+  }
+
+  // Get container ID from query param or header
+  const url = new URL(request.url);
+  const containerId = url.searchParams.get('container') ||
+    request.headers.get('X-YTM-Container') ||
+    'default';
+
+  if (!env.YTM_RUM) {
+    return errorResponse('RUM not configured', request, 503);
+  }
+
+  // Forward to Durable Object for WebSocket handling
+  const id = env.YTM_RUM.idFromName(containerId);
+  const stub = env.YTM_RUM.get(id);
+
+  return stub.fetch(request);
+}
+
+/**
+ * Handle RUM stats request
+ */
+async function handleTelemetryStats(
+  request: CfRequest,
+  env: Env
+): Promise<Response> {
+  const url = new URL(request.url);
+  const containerId = url.searchParams.get('container') ||
+    request.headers.get('X-YTM-Container') ||
+    'default';
+
+  if (!env.YTM_RUM) {
+    return errorResponse('RUM not configured', request, 503);
+  }
+
+  const id = env.YTM_RUM.idFromName(containerId);
+  const stub = env.YTM_RUM.get(id);
+
+  const response = await stub.fetch('https://rum/stats');
+  const stats = await response.json();
+
+  return jsonResponse(stats, request, 200, CONFIG.cache.none);
 }
 
 async function handleLoader(request: Request, _env: Env): Promise<Response> {
@@ -501,6 +631,16 @@ export default {
       // Telemetry endpoint
       if (path === '/_ytm/telemetry') {
         return handleTelemetry(request, env, ctx);
+      }
+
+      // Real-time telemetry WebSocket stream
+      if (path === '/_ytm/telemetry/stream') {
+        return handleTelemetryStream(request, env);
+      }
+
+      // Telemetry stats endpoint
+      if (path === '/_ytm/telemetry/stats') {
+        return handleTelemetryStats(request, env);
       }
 
       // 404 for unknown /_ytm/ routes

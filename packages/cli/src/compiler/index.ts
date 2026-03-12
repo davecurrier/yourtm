@@ -305,7 +305,8 @@ const defineCustomVariable = (variable) => ({ ...variable, type: 'custom' });
     try {
       await writeFile(tempPath, code);
       const moduleUrl = pathToFileURL(tempPath).href + `?t=${Date.now()}`;
-      const module = await import(moduleUrl);
+      // Use eval to bypass static analysis of dynamic imports
+      const module = await eval(`import('${moduleUrl}')`);
 
       const variables: VariableDefinition[] = [];
 
@@ -429,7 +430,8 @@ const defineConfig = (config) => config;
     try {
       await writeFile(tempPath, code);
       const moduleUrl = pathToFileURL(tempPath).href + `?t=${Date.now()}`;
-      const module = await import(moduleUrl);
+      // Use eval to bypass static analysis
+      const module = await eval(`import('${moduleUrl}')`);
       const definition = module.default || module;
 
       // Accept either 'id' or 'name' as the identifier
@@ -662,16 +664,83 @@ const defineConfig = (config) => config;
     }
   }
 
+  // Telemetry batching
+  var telemetryQueue = [];
+  var telemetryTimer = null;
+  var BATCH_SIZE = 10;
+  var BATCH_INTERVAL = 5000; // 5 seconds
+
+  function flushTelemetry() {
+    if (telemetryQueue.length === 0) return;
+
+    var batch = telemetryQueue.splice(0, telemetryQueue.length);
+    var endpoint = state.telemetryEndpoint || '/_ytm/telemetry';
+
+    // Send to preview endpoint if in preview mode
+    var preview = window.__YOURTM_PREVIEW__;
+    if (preview && preview.previewMode && preview.previewEndpoint) {
+      endpoint = preview.previewEndpoint;
+    }
+
+    try {
+      var payload = JSON.stringify(batch);
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(endpoint, payload);
+      } else {
+        fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true,
+        });
+      }
+    } catch (e) {
+      // Silently fail - telemetry should never break the page
+    }
+  }
+
+  function scheduleTelemetryFlush() {
+    if (telemetryTimer) return;
+    telemetryTimer = setTimeout(function() {
+      telemetryTimer = null;
+      flushTelemetry();
+    }, BATCH_INTERVAL);
+  }
+
+  // Flush on page unload
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', flushTelemetry);
+    window.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'hidden') flushTelemetry();
+    });
+  }
+
   function trackTelemetry(tagId, success, latency, error) {
-    // Send telemetry to YourTM servers
+    var event = {
+      type: 'tag_execution',
+      containerId: containerId,
+      tagId: tagId,
+      tagName: state.tags.get(tagId)?.name || tagId,
+      success: success,
+      latency: latency,
+      error: error?.message,
+      timestamp: Date.now(),
+      pageUrl: window.location.href,
+    };
+
+    // Send to local telemetry array (for debugging)
     if (window.__YTM_TELEMETRY__) {
-      window.__YTM_TELEMETRY__.push({
-        tagId,
-        success,
-        latency,
-        error: error?.message,
-        timestamp: Date.now(),
-      });
+      window.__YTM_TELEMETRY__.push(event);
+    }
+
+    // Add to batch queue
+    telemetryQueue.push(event);
+
+    // Flush immediately if batch is full, otherwise schedule
+    if (telemetryQueue.length >= BATCH_SIZE) {
+      flushTelemetry();
+    } else {
+      scheduleTelemetryFlush();
     }
   }
 

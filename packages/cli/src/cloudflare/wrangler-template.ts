@@ -37,6 +37,10 @@ export interface WranglerConfig {
     staging?: Partial<WranglerConfig>;
     production?: Partial<WranglerConfig>;
   };
+  /** Enable RUM (Real User Monitoring) with Durable Objects */
+  enableRUM?: boolean;
+  /** Analytics Engine dataset name for historical telemetry */
+  analyticsDataset?: string;
 }
 
 /**
@@ -56,6 +60,8 @@ export function generateWranglerConfig(config: WranglerConfig): string {
     workersDevEnabled = true,
     customDomain,
     environments,
+    enableRUM = true,
+    analyticsDataset,
   } = config;
 
   const lines: string[] = [
@@ -89,12 +95,39 @@ export function generateWranglerConfig(config: WranglerConfig): string {
   }
   lines.push('');
 
+  // RUM Durable Object bindings
+  if (enableRUM) {
+    lines.push('# RUM (Real User Monitoring) Durable Object');
+    lines.push('# Handles real-time telemetry streaming and aggregation');
+    lines.push('[[durable_objects.bindings]]');
+    lines.push('name = "YTM_RUM"');
+    lines.push('class_name = "RUMDurableObject"');
+    lines.push('');
+    lines.push('[[migrations]]');
+    lines.push('tag = "v1"');
+    lines.push('new_classes = ["RUMDurableObject"]');
+    lines.push('');
+  }
+
+  // Analytics Engine bindings
+  if (analyticsDataset) {
+    lines.push('# Analytics Engine for historical telemetry data');
+    lines.push('[[analytics_engine_datasets]]');
+    lines.push('binding = "YTM_ANALYTICS"');
+    lines.push(`dataset = "${analyticsDataset}"`);
+    lines.push('');
+  }
+
   // Routes
   if (routes.length > 0) {
     lines.push('# Routes');
     for (const route of routes) {
       lines.push('[[routes]]');
-      lines.push(`pattern = "${route.pattern}"`);
+      // Ensure the pattern ends with /_ytm/* to avoid proxying all assets
+      const safePattern = route.pattern.includes('/_ytm/*') 
+        ? route.pattern 
+        : (route.pattern.endsWith('/*') ? route.pattern.slice(0, -2) : route.pattern) + '/_ytm/*';
+      lines.push(`pattern = "${safePattern}"`);
       if (route.zoneId) {
         lines.push(`zone_id = "${route.zoneId}"`);
       } else if (route.zoneName) {
@@ -108,7 +141,8 @@ export function generateWranglerConfig(config: WranglerConfig): string {
   if (customDomain) {
     lines.push('# Custom Domain');
     lines.push('[[routes]]');
-    lines.push(`pattern = "${customDomain}/*"`);
+    const safeDomain = customDomain.endsWith('/') ? customDomain.slice(0, -1) : customDomain;
+    lines.push(`pattern = "${safeDomain}/_ytm/*"`);
     lines.push('custom_domain = true');
     lines.push('');
   }

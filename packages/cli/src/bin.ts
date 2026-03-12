@@ -104,10 +104,14 @@ program
   .option('-p, --port <port>', 'Port to listen on', '3456')
   .option('-h, --host <host>', 'Host to bind to', 'localhost')
   .option('-o, --open', 'Open browser automatically')
+  .option('--preview', 'Enable preview mode (send telemetry to desktop app)')
+  .option('--preview-endpoint <url>', 'Preview telemetry endpoint', 'http://localhost:3344/api/preview/telemetry')
   .action(async (options) => {
     await devCommand({
       ...options,
       port: parseInt(options.port, 10),
+      preview: options.preview,
+      previewEndpoint: options.previewEndpoint,
     });
   });
 

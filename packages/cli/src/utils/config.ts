@@ -107,10 +107,11 @@ const defineConfig = (config) => config;
   const { writeFile, unlink } = await import('node:fs/promises');
 
   try {
-    await writeFile(tempPath, code);
-    const configUrl = pathToFileURL(tempPath).href + `?t=${Date.now()}`;
-    const module = await import(configUrl);
-    return validateConfig(module.default || module, cwd);
+      await writeFile(tempPath, code);
+      const configUrl = pathToFileURL(tempPath).href + `?t=${Date.now()}`;
+      // Use eval to bypass static analysis of dynamic imports
+      const module = await eval(`import('${configUrl}')`);
+      return validateConfig(module.default || module, cwd);
   } finally {
     // Clean up temp file
     try {
