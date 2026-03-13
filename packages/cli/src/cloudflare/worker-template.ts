@@ -15,6 +15,7 @@ export function generateWorkerScript(options: {
   telemetryEndpoint?: string;
   corsOrigins?: string[];
   debugMode?: boolean;
+  includeRUM?: boolean;
 } = { containerId: '' }): string {
   const {
     containerId,
@@ -22,7 +23,138 @@ export function generateWorkerScript(options: {
     telemetryEndpoint = 'https://telemetry.yourtm.io/collect',
     corsOrigins = ['*'],
     debugMode = false,
+    includeRUM = true,
   } = options;
+
+  let rumDoCode = '';
+  if (includeRUM) {
+    rumDoCode = `
+/**
+ * RUM Durable Object
+ * Handles real-time telemetry streaming and aggregation
+ */
+export class RUMDurableObject {
+  constructor(state, env) {
+    this.state = state;
+    this.sessions = new Set();
+    this.events = [];
+    this.tagStats = new Map();
+    this.eventTimestamps = [];
+    this.containerId = '${containerId}';
+
+    this.state.blockConcurrencyWhile(async () => {
+      const stored = await this.state.storage.get('rum_state');
+      if (stored) {
+        this.events = stored.events || [];
+        this.tagStats = new Map(stored.tagStats || []);
+        this.containerId = stored.containerId || '${containerId}';
+      }
+    });
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    if (request.headers.get('Upgrade') === 'websocket') {
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair);
+      server.accept();
+      this.sessions.add(server);
+      server.addEventListener('message', (msg) => {
+        try {
+          const data = JSON.parse(msg.data);
+          if (data.type === 'ping') server.send(JSON.stringify({ type: 'pong' }));
+        } catch (e) {}
+      });
+      server.addEventListener('close', () => this.sessions.delete(server));
+      server.addEventListener('error', () => this.sessions.delete(server));
+      
+      server.send(JSON.stringify({
+        type: 'init',
+        stats: this.calculateStats(),
+        recentEvents: this.events.slice(-50),
+      }));
+
+      return new Response(null, { 
+        status: 101, 
+        webSocket: client,
+        headers: getCorsHeaders(request)
+      });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/events') {
+      const events = await request.json();
+      const incoming = Array.isArray(events) ? events : [events];
+      for (const event of incoming) {
+        this.events.push(event);
+        if (this.events.length > 1000) this.events.shift();
+        this.updateTagStats(event);
+        this.broadcast({ type: 'event', event });
+      }
+      if (this.events.length % 10 === 0) await this.persistState();
+      this.broadcast({ type: 'stats', stats: this.calculateStats() });
+      return new Response(JSON.stringify({ status: 'ok' }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/stats') {
+      return new Response(JSON.stringify(this.calculateStats()), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    return new Response('Not Found', { status: 404 });
+  }
+
+  updateTagStats(event) {
+    const key = event.tagId;
+    let stats = this.tagStats.get(key);
+    if (!stats) {
+      stats = { tagId: event.tagId, tagName: event.tagName || event.tagId, fireCount: 0, successCount: 0, errorCount: 0, totalLatency: 0, latencies: [], lastFired: 0 };
+      this.tagStats.set(key, stats);
+    }
+    stats.fireCount++;
+    if (event.success) stats.successCount++; else stats.errorCount++;
+    stats.totalLatency += event.latency;
+    stats.latencies.push(event.latency);
+    if (stats.latencies.length > 500) stats.latencies.shift();
+    stats.lastFired = event.timestamp;
+  }
+
+  calculateStats() {
+    let totalEvents = 0, successCount = 0, allLatencies = [];
+    const tags = [];
+    for (const [, stats] of this.tagStats) {
+      totalEvents += stats.fireCount;
+      successCount += stats.successCount;
+      allLatencies.push(...stats.latencies);
+      tags.push({ ...stats });
+    }
+    const sorted = [...allLatencies].sort((a, b) => a - b);
+    return {
+      totalEvents,
+      successRate: totalEvents > 0 ? (successCount / totalEvents) * 100 : 100,
+      avgLatency: allLatencies.length > 0 ? allLatencies.reduce((a, b) => a + b, 0) / allLatencies.length : 0,
+      p95Latency: sorted[Math.floor(sorted.length * 0.95)] || 0,
+      tags: tags.sort((a, b) => b.fireCount - a.fireCount).slice(0, 10),
+      lastUpdated: Date.now()
+    };
+  }
+
+  broadcast(message) {
+    const json = JSON.stringify(message);
+    for (const ws of this.sessions) {
+      try { ws.send(json); } catch (e) { this.sessions.delete(ws); }
+    }
+  }
+
+  async persistState() {
+    await this.state.storage.put('rum_state', {
+      events: this.events.slice(-1000),
+      tagStats: Array.from(this.tagStats.entries()),
+      containerId: this.containerId,
+    });
+  }
+}
+`;
+  }
 
   return `
 /**
@@ -31,12 +163,6 @@ export function generateWorkerScript(options: {
  * Generated: ${new Date().toISOString()}
  *
  * This worker serves YourTM tag manager bundles from Cloudflare KV.
- * Routes:
- *   /_ytm/runtime.js     - Main runtime bundle
- *   /_ytm/chunks/:zone   - Zone-specific chunks
- *   /_ytm/telemetry      - Telemetry collection endpoint
- *   /_ytm/health         - Health check
- *   /_ytm/config         - Container configuration (preview mode only)
  */
 
 // ============================================================================
@@ -46,50 +172,25 @@ export function generateWorkerScript(options: {
 /**
  * @typedef {Object} Env
  * @property {KVNamespace} YTM_KV - KV namespace for bundle storage
+ * @property {DurableObjectNamespace} [RUM_DO] - Durable Object for real-time monitoring
  * @property {string} [TELEMETRY_ENDPOINT] - Optional custom telemetry endpoint
  * @property {string} [DEBUG_SECRET] - Secret for debug/preview mode
- */
-
-/**
- * @typedef {Object} ContainerConfig
- * @property {string} containerId
- * @property {string} version
- * @property {Zone[]} zones
- * @property {Object} settings
- */
-
-/**
- * @typedef {Object} Zone
- * @property {string} id
- * @property {string} name
- * @property {string[]} urlPatterns
- * @property {string[]} tags
- */
-
-/**
- * @typedef {Object} TelemetryEvent
- * @property {string} containerId
- * @property {string} tagId
- * @property {string} event
- * @property {number} latency
- * @property {boolean} success
- * @property {string} [error]
- * @property {number} timestamp
  */
 
 // ============================================================================
 // Constants
 // ============================================================================
 
+const CONTAINER_ID = '${containerId}';
 const CORS_ORIGINS = ${JSON.stringify(corsOrigins)};
 const ENABLE_TELEMETRY = ${enableTelemetry};
 const TELEMETRY_ENDPOINT = '${telemetryEndpoint}';
 const DEBUG_MODE = ${debugMode};
 
 // Cache durations
-const CACHE_RUNTIME = 'public, max-age=31536000, immutable'; // 1 year for versioned
-const CACHE_CHUNKS = 'public, max-age=31536000, immutable';  // 1 year for versioned
-const CACHE_CONFIG = 'public, max-age=60';                    // 1 minute for config
+const CACHE_RUNTIME = 'public, max-age=31536000, immutable';
+const CACHE_CHUNKS = 'public, max-age=31536000, immutable';
+const CACHE_CONFIG = 'public, max-age=60';
 const CACHE_NONE = 'no-cache, no-store, must-revalidate';
 
 // Content types
@@ -100,11 +201,6 @@ const CONTENT_JSON = 'application/json; charset=utf-8';
 // CORS Helpers
 // ============================================================================
 
-/**
- * Get CORS headers for the request origin
- * @param {Request} request
- * @returns {Object} CORS headers
- */
 function getCorsHeaders(request) {
   const origin = request.headers.get('Origin') || '*';
   const allowedOrigin = CORS_ORIGINS.includes('*') || CORS_ORIGINS.includes(origin)
@@ -119,11 +215,6 @@ function getCorsHeaders(request) {
   };
 }
 
-/**
- * Handle CORS preflight requests
- * @param {Request} request
- * @returns {Response}
- */
 function handleOptions(request) {
   return new Response(null, {
     status: 204,
@@ -135,13 +226,6 @@ function handleOptions(request) {
 // Response Helpers
 // ============================================================================
 
-/**
- * Create a JavaScript response with proper headers
- * @param {string} script
- * @param {Request} request
- * @param {string} cacheControl
- * @returns {Response}
- */
 function jsResponse(script, request, cacheControl = CACHE_RUNTIME) {
   return new Response(script, {
     status: 200,
@@ -154,14 +238,6 @@ function jsResponse(script, request, cacheControl = CACHE_RUNTIME) {
   });
 }
 
-/**
- * Create a JSON response with proper headers
- * @param {Object} data
- * @param {Request} request
- * @param {number} status
- * @param {string} cacheControl
- * @returns {Response}
- */
 function jsonResponse(data, request, status = 200, cacheControl = CACHE_CONFIG) {
   return new Response(JSON.stringify(data), {
     status,
@@ -173,13 +249,6 @@ function jsonResponse(data, request, status = 200, cacheControl = CACHE_CONFIG) 
   });
 }
 
-/**
- * Create an error response
- * @param {string} message
- * @param {Request} request
- * @param {number} status
- * @returns {Response}
- */
 function errorResponse(message, request, status = 500) {
   return jsonResponse({ error: message }, request, status, CACHE_NONE);
 }
@@ -188,42 +257,21 @@ function errorResponse(message, request, status = 500) {
 // Preview Mode
 // ============================================================================
 
-/**
- * Check if request is in preview mode
- * @param {Request} request
- * @param {Env} env
- * @returns {boolean}
- */
 function isPreviewMode(request, env) {
   const url = new URL(request.url);
   const debugToken = request.headers.get('X-YTM-Debug-Token') ||
                      url.searchParams.get('_ytm_debug');
-
   if (!debugToken) return false;
-
-  // In production, validate against stored debug secret
-  if (env.DEBUG_SECRET) {
-    return debugToken === env.DEBUG_SECRET;
-  }
-
-  // In debug mode, accept any token
+  if (env.DEBUG_SECRET) return debugToken === env.DEBUG_SECRET;
   return DEBUG_MODE;
 }
 
-/**
- * Get the version to serve (preview or latest)
- * @param {Request} request
- * @param {Env} env
- * @returns {string}
- */
 function getVersionPrefix(request, env) {
   const url = new URL(request.url);
   const previewVersion = url.searchParams.get('_ytm_version');
-
   if (previewVersion && isPreviewMode(request, env)) {
     return \`preview/\${previewVersion}\`;
   }
-
   return 'latest';
 }
 
@@ -231,55 +279,27 @@ function getVersionPrefix(request, env) {
 // Zone Matching
 // ============================================================================
 
-/**
- * Match URL against zone patterns
- * @param {string} url
- * @param {string[]} patterns
- * @returns {boolean}
- */
 function matchesZonePattern(url, patterns) {
   for (var i = 0; i < patterns.length; i++) {
     try {
       var pattern = patterns[i];
-      // Convert glob pattern to regex by escaping special chars
-      // and converting * to .* and ? to .
       var escaped = '';
       for (var j = 0; j < pattern.length; j++) {
         var c = pattern[j];
-        if (c === '*') {
-          escaped += '.*';
-        } else if (c === '?') {
-          escaped += '.';
-        } else if ('.+^' + '$' + '{}()|[]\\\\'.indexOf(c) >= 0) {
-          escaped += '\\\\' + c;
-        } else {
-          escaped += c;
-        }
+        if (c === '*') escaped += '.*';
+        else if (c === '?') escaped += '.';
+        else if ('.+^$(){}|[]\\\\'.indexOf(c) >= 0) escaped += '\\\\' + c;
+        else escaped += c;
       }
       var regex = new RegExp('^' + escaped + '$');
-
-      if (regex.test(url)) {
-        return true;
-      }
-    } catch (e) {
-      // Invalid pattern, skip
-      if (DEBUG_MODE) {
-        console.error('Invalid zone pattern:', patterns[i], e);
-      }
-    }
+      if (regex.test(url)) return true;
+    } catch (e) {}
   }
   return false;
 }
 
-/**
- * Get zones that match the page URL
- * @param {ContainerConfig} config
- * @param {string} pageUrl
- * @returns {Zone[]}
- */
 function getMatchingZones(config, pageUrl) {
   if (!config || !config.zones) return [];
-
   return config.zones.filter(zone =>
     zone.urlPatterns && matchesZonePattern(pageUrl, zone.urlPatterns)
   );
@@ -289,78 +309,34 @@ function getMatchingZones(config, pageUrl) {
 // Route Handlers
 // ============================================================================
 
-/**
- * Handle health check requests
- * @param {Request} request
- * @returns {Response}
- */
 function handleHealth(request) {
-  return jsonResponse({
-    status: 'ok',
-    timestamp: Date.now(),
-    version: '1.0.0',
-  }, request, 200, CACHE_NONE);
+  return jsonResponse({ status: 'ok', timestamp: Date.now(), container: CONTAINER_ID }, request, 200, CACHE_NONE);
 }
 
-/**
- * Handle runtime.js requests
- * @param {Request} request
- * @param {Env} env
- * @returns {Promise<Response>}
- */
 async function handleRuntime(request, env) {
   const version = getVersionPrefix(request, env);
   const key = \`\${version}/runtime.js\`;
-
   try {
     const script = await env.YTM_KV.get(key, 'text');
-
-    if (!script) {
-      return errorResponse('Runtime not found', request, 404);
-    }
-
+    if (!script) return errorResponse('Runtime not found', request, 404);
     return jsResponse(script, request, CACHE_RUNTIME);
   } catch (e) {
-    if (DEBUG_MODE) {
-      console.error('Error fetching runtime:', e);
-    }
     return errorResponse('Failed to fetch runtime', request, 500);
   }
 }
 
-/**
- * Handle zone chunk requests
- * @param {Request} request
- * @param {Env} env
- * @param {string} zoneId
- * @returns {Promise<Response>}
- */
 async function handleZoneChunk(request, env, zoneId) {
   const version = getVersionPrefix(request, env);
   const key = \`\${version}/zones/\${zoneId}.js\`;
-
   try {
     const script = await env.YTM_KV.get(key, 'text');
-
-    if (!script) {
-      return errorResponse(\`Zone '\${zoneId}' not found\`, request, 404);
-    }
-
+    if (!script) return errorResponse(\`Zone '\${zoneId}' not found\`, request, 404);
     return jsResponse(script, request, CACHE_CHUNKS);
   } catch (e) {
-    if (DEBUG_MODE) {
-      console.error('Error fetching zone chunk:', e);
-    }
     return errorResponse('Failed to fetch zone chunk', request, 500);
   }
 }
 
-/**
- * Handle config requests (returns zones matching the page URL)
- * @param {Request} request
- * @param {Env} env
- * @returns {Promise<Response>}
- */
 async function handleConfig(request, env) {
   const url = new URL(request.url);
   const pageUrl = url.searchParams.get('url') || url.searchParams.get('pageUrl');
@@ -369,139 +345,79 @@ async function handleConfig(request, env) {
 
   try {
     const configStr = await env.YTM_KV.get(key, 'text');
-
-    if (!configStr) {
-      return errorResponse('Config not found', request, 404);
-    }
-
+    if (!configStr) return errorResponse('Config not found', request, 404);
     const config = JSON.parse(configStr);
 
-    // If page URL provided, filter zones
     if (pageUrl) {
       const matchingZones = getMatchingZones(config, pageUrl);
       return jsonResponse({
         containerId: config.containerId,
         version: config.version,
-        zones: matchingZones.map(z => ({
-          id: z.id,
-          name: z.name,
-          tagCount: z.tags?.length || 0,
-        })),
+        zones: matchingZones.map(z => ({ id: z.id, name: z.name, tagCount: z.tags?.length || 0 })),
         preview: isPreviewMode(request, env),
       }, request, 200, CACHE_CONFIG);
     }
 
-    // Return full config in preview mode
-    if (isPreviewMode(request, env)) {
-      return jsonResponse(config, request, 200, CACHE_NONE);
-    }
-
-    // Return minimal config in production
-    return jsonResponse({
-      containerId: config.containerId,
-      version: config.version,
-      zoneCount: config.zones?.length || 0,
-    }, request, 200, CACHE_CONFIG);
+    if (isPreviewMode(request, env)) return jsonResponse(config, request, 200, CACHE_NONE);
+    return jsonResponse({ containerId: config.containerId, version: config.version }, request, 200, CACHE_CONFIG);
   } catch (e) {
-    if (DEBUG_MODE) {
-      console.error('Error fetching config:', e);
-    }
     return errorResponse('Failed to fetch config', request, 500);
   }
 }
 
-/**
- * Handle telemetry POST requests
- * @param {Request} request
- * @param {Env} env
- * @param {ExecutionContext} ctx
- * @returns {Promise<Response>}
- */
 async function handleTelemetry(request, env, ctx) {
-  if (!ENABLE_TELEMETRY) {
-    return jsonResponse({ status: 'disabled' }, request, 200, CACHE_NONE);
-  }
-
-  if (request.method !== 'POST') {
-    return errorResponse('Method not allowed', request, 405);
-  }
+  if (!ENABLE_TELEMETRY) return jsonResponse({ status: 'disabled' }, request, 200, CACHE_NONE);
+  if (request.method !== 'POST') return errorResponse('Method not allowed', request, 405);
 
   try {
     const events = await request.json();
-
-    if (!Array.isArray(events)) {
-      return errorResponse('Invalid telemetry format', request, 400);
-    }
-
-    // Validate and enrich events
-    const enrichedEvents = events.map(event => ({
+    const incoming = Array.isArray(events) ? events : [events];
+    const enrichedEvents = incoming.map(event => ({
       ...event,
       receivedAt: Date.now(),
       workerRegion: request.cf?.colo || 'unknown',
       clientIp: request.headers.get('CF-Connecting-IP') || 'unknown',
-      userAgent: request.headers.get('User-Agent') || 'unknown',
     }));
 
-    // Forward to telemetry endpoint asynchronously
-    ctx.waitUntil(
-      fetch(env.TELEMETRY_ENDPOINT || TELEMETRY_ENDPOINT, {
+    // Forward to Durable Object for real-time preview
+    if (env.RUM_DO) {
+      const doId = env.RUM_DO.idFromName(CONTAINER_ID);
+      const obj = env.RUM_DO.get(doId);
+      ctx.waitUntil(obj.fetch(new Request('https://do/events', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(enrichedEvents),
-      }).catch(e => {
-        if (DEBUG_MODE) {
-          console.error('Telemetry forward failed:', e);
-        }
-      })
-    );
+        headers: { 'Content-Type': 'application/json' }
+      })).catch(() => {}));
+    }
+
+    // Forward to persistent storage
+    ctx.waitUntil(fetch(env.TELEMETRY_ENDPOINT || TELEMETRY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(enrichedEvents),
+    }).catch(() => {}));
 
     return jsonResponse({ status: 'ok', count: enrichedEvents.length }, request, 200, CACHE_NONE);
   } catch (e) {
-    if (DEBUG_MODE) {
-      console.error('Telemetry error:', e);
-    }
     return errorResponse('Invalid telemetry data', request, 400);
   }
 }
 
-/**
- * Handle loader.js requests - generates a lightweight loader script
- * @param {Request} request
- * @param {Env} env
- * @returns {Promise<Response>}
- */
 async function handleLoader(request, env) {
   const url = new URL(request.url);
   const baseUrl = \`\${url.protocol}//\${url.host}\`;
-
   const loaderScript = \`
 (function() {
   'use strict';
-
-  // YourTM Loader
   var YTM_BASE = '\${baseUrl}/_ytm';
-  var w = window;
-  var d = document;
-
-  // Initialize data layer
+  var w = window, d = document;
   w.dataLayer = w.dataLayer || [];
-
-  // Load runtime
   var s = d.createElement('script');
   s.src = YTM_BASE + '/runtime.js';
   s.async = true;
-  s.onload = function() {
-    // Runtime will handle zone loading
-    if (w.YTM && w.YTM.init) {
-      w.YTM.init({ base: YTM_BASE });
-    }
-  };
   d.head.appendChild(s);
 })();
 \`.trim();
-
   return jsResponse(loaderScript, request, CACHE_RUNTIME);
 }
 
@@ -510,86 +426,55 @@ async function handleLoader(request, env) {
 // ============================================================================
 
 export default {
-  /**
-   * Main fetch handler
-   * @param {Request} request
-   * @param {Env} env
-   * @param {ExecutionContext} ctx
-   * @returns {Promise<Response>}
-   */
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Handle CORS preflight
-    if (request.method === 'OPTIONS') {
-      return handleOptions(request);
-    }
+    if (request.method === 'OPTIONS') return handleOptions(request);
 
-    // Route requests
     try {
-      // Health check
-      if (path === '/_ytm/health') {
-        return handleHealth(request);
-      }
-
-      // Loader script
-      if (path === '/_ytm/loader.js') {
-        return handleLoader(request, env);
-      }
-
-      // Runtime bundle
-      if (path === '/_ytm/runtime.js') {
-        return handleRuntime(request, env);
-      }
-
-      // Zone chunks
+      if (path === '/_ytm/health') return handleHealth(request);
+      if (path === '/_ytm/loader.js') return handleLoader(request, env);
+      if (path === '/_ytm/runtime.js') return handleRuntime(request, env);
+      
       const zoneMatch = path.match(/^\\/_ytm\\/chunks\\/([a-zA-Z0-9_-]+)\\.js$/);
-      if (zoneMatch) {
-        return handleZoneChunk(request, env, zoneMatch[1]);
+      if (zoneMatch) return handleZoneChunk(request, env, zoneMatch[1]);
+
+      if (path === '/_ytm/config') return handleConfig(request, env);
+      if (path === '/_ytm/telemetry') return handleTelemetry(request, env, ctx);
+
+      // Preview Stream (Durable Object)
+      if (path === '/_ytm/preview/stream') {
+        if (request.method !== 'GET') {
+          return errorResponse('Method not allowed', request, 405);
+        }
+        if (!env.RUM_DO) return errorResponse('Durable Object not configured', request, 503);
+        const doId = env.RUM_DO.idFromName(CONTAINER_ID);
+        const obj = env.RUM_DO.get(doId);
+        return obj.fetch(request);
       }
 
-      // Config endpoint
-      if (path === '/_ytm/config') {
-        return handleConfig(request, env);
-      }
-
-      // Telemetry endpoint
-      if (path === '/_ytm/telemetry') {
-        return handleTelemetry(request, env, ctx);
-      }
-
-      // 404 for unknown /_ytm/ routes
-      if (path.startsWith('/_ytm/')) {
-        return errorResponse('Not found', request, 404);
-      }
-
-      // Pass through other requests (if this worker is a zone worker)
+      if (path.startsWith('/_ytm/')) return errorResponse('Not found', request, 404);
       return fetch(request);
     } catch (e) {
-      if (DEBUG_MODE) {
-        console.error('Worker error:', e);
-        return errorResponse(e.message || 'Internal error', request, 500);
-      }
-      return errorResponse('Internal error', request, 500);
+      return errorResponse(e.message || 'Internal error', request, 500);
     }
   },
 };
+
+${rumDoCode}
 `.trim();
 }
 
 /**
  * Get the minified version of the worker script
- * In production, you might want to use a proper minifier
  */
 export function generateMinifiedWorkerScript(options: Parameters<typeof generateWorkerScript>[0]): string {
   const script = generateWorkerScript(options);
-  // Basic minification: remove comments and extra whitespace
-  // For production, use terser or esbuild
   return script
-    .replace(/\/\*[\s\S]*?\*\//g, '') // Remove block comments
-    .replace(/\/\/.*$/gm, '')          // Remove line comments
-    .replace(/\n\s*\n/g, '\n')         // Remove empty lines
+    .replace(/\/\*[\s\S]*?\*\//g, '') 
+    .replace(/\/\/.*$/gm, '')          
+    .replace(/\n\s*\n/g, '\n')         
     .trim();
 }
 

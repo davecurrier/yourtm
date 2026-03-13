@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join, basename, dirname, relative } from 'node:path';
+import { mkdir, writeFile, unlink, rmdir } from 'node:fs/promises';
+import { join, basename, dirname, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import process from 'node:process';
 import * as esbuild from 'esbuild';
 import { glob } from 'glob';
 import { logger } from '../utils/logger.js';
@@ -524,37 +525,6 @@ const defineConfig = (config) => config;
   }
 
   private async generateCoreBundle(): Promise<CompiledBundle> {
-    const runtimeCode = this.generateRuntimeCode();
-
-    const result = await esbuild.build({
-      stdin: {
-        contents: runtimeCode,
-        loader: 'js',
-      },
-      bundle: true,
-      minify: this.config.minify,
-      sourcemap: this.config.sourcemap ? 'external' : false,
-      format: 'iife',
-      globalName: 'YTM',
-      write: false,
-      target: ['es2020'],
-    });
-
-    // esbuild with stdin outputs to '<stdin>.js' or just the first file
-    const jsFile = result.outputFiles.find(f => !f.path.endsWith('.map'));
-    const mapFile = result.outputFiles.find(f => f.path.endsWith('.map'));
-    const code = jsFile?.text || '';
-    const map = mapFile?.text;
-
-    return {
-      name: 'core.js',
-      code,
-      map,
-      size: Buffer.byteLength(code, 'utf8'),
-    };
-  }
-
-  private generateRuntimeCode(): string {
     const triggers = Array.from(this.triggers.values());
     const variables = Array.from(this.variables.values());
     
@@ -572,34 +542,23 @@ const defineConfig = (config) => config;
       return value;
     });
 
-    return `
-(function() {
-  'use strict';
+    // Create a temporary entry point that initializes the runtime
+    // We point to the actual source file in the workspace
+    const runtimeSrcPath = resolve(process.cwd(), 'packages/runtime/src/index.ts');
+    
+    const entryCode = `
+import { initYourTM } from '${runtimeSrcPath}';
 
-  // YourTM Runtime v${this.config.containerId}
-  const containerId = '${this.config.containerId}';
+const config = {
+  containerId: '${this.config.containerId}',
+  debug: ${!!this.config.debug},
+  triggers: ${triggersJson},
+  variables: ${variablesJson}
+};
 
-  // Data layer
-  window.dataLayer = window.dataLayer || [];
-
-  // Internal state
-  const state = {
-    tags: new Map(),
-    triggers: new Map(),
-    variables: new Map(),
-    zones: new Map(),
-    consent: {},
-    initialized: false,
-  };
-
-  // Trigger registry
-  const triggers = ${triggersJson};
-  triggers.forEach(t => state.triggers.set(t.id, t));
-
-  // Variable registry
-  const vars = ${variablesJson};
-  vars.forEach(v => {
-    // Revive functions if they were stringified
+// Revive variables if they have functions
+if (config.variables) {
+  config.variables.forEach(v => {
     Object.keys(v).forEach(k => {
       if (typeof v[k] === 'string' && v[k].startsWith('__FUNC_')) {
         const fnStr = v[k].substring(7, v[k].length - 2);
@@ -610,165 +569,38 @@ const defineConfig = (config) => config;
         }
       }
     });
-    state.variables.set(v.name || v.id, v);
   });
+}
 
-  // Event handlers
-  const handlers = {
-    pageview: () => {
-      fireTrigger('pageview');
-    },
-    click: (e) => {
-      fireTrigger('click', { element: e.target, event: e });
-    },
-    scroll: () => {
-      fireTrigger('scroll', { scrollY: window.scrollY });
-    },
-  };
-
-  function fireTrigger(type, context = {}) {
-    const trigger = Array.from(state.triggers.values()).find(t => t.type === type);
-    if (!trigger) return;
-
-    const tagsToFire = Array.from(state.tags.values())
-      .filter(tag => tag.triggers.includes(trigger.id))
-      .filter(tag => checkConsent(tag))
-      .sort((a, b) => (b.priority || 0) - (a.priority || 0));
-
-    tagsToFire.forEach(tag => executeTag(tag, context));
-  }
-
-  function checkConsent(tag) {
-    if (!tag.consent || tag.consent.length === 0) return true;
-    return tag.consent.every(c => state.consent[c] === true);
-  }
-
-  async function executeTag(tag, context) {
-    const start = performance.now();
-    try {
-      if (typeof tag.code === 'function') {
-        const result = tag.code(context);
-        if (result instanceof Promise) {
-          await Promise.race([
-            result,
-            new Promise(resolve => setTimeout(resolve, 10000))
-          ]);
-        }
-      }
-      const latency = performance.now() - start;
-      trackTelemetry(tag.id, true, latency);
-    } catch (error) {
-      const latency = performance.now() - start;
-      trackTelemetry(tag.id, false, latency, error);
-      console.error('[YTM] Tag error:', tag.id, error);
-    }
-  }
-
-  // Telemetry batching
-  var telemetryQueue = [];
-  var telemetryTimer = null;
-  var BATCH_SIZE = 10;
-  var BATCH_INTERVAL = 5000; // 5 seconds
-
-  function flushTelemetry() {
-    if (telemetryQueue.length === 0) return;
-
-    var batch = telemetryQueue.splice(0, telemetryQueue.length);
-    var endpoint = state.telemetryEndpoint || '/_ytm/telemetry';
-
-    // Send to preview endpoint if in preview mode
-    var preview = window.__YOURTM_PREVIEW__;
-    if (preview && preview.previewMode && preview.previewEndpoint) {
-      endpoint = preview.previewEndpoint;
-    }
-
-    try {
-      var payload = JSON.stringify(batch);
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(endpoint, payload);
-      } else {
-        fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: payload,
-          keepalive: true,
-        });
-      }
-    } catch (e) {
-      // Silently fail - telemetry should never break the page
-    }
-  }
-
-  function scheduleTelemetryFlush() {
-    if (telemetryTimer) return;
-    telemetryTimer = setTimeout(function() {
-      telemetryTimer = null;
-      flushTelemetry();
-    }, BATCH_INTERVAL);
-  }
-
-  // Flush on page unload
-  if (typeof window !== 'undefined') {
-    window.addEventListener('pagehide', flushTelemetry);
-    window.addEventListener('visibilitychange', function() {
-      if (document.visibilityState === 'hidden') flushTelemetry();
-    });
-  }
-
-  function trackTelemetry(tagId, success, latency, error) {
-    var event = {
-      type: 'tag_execution',
-      containerId: containerId,
-      tagId: tagId,
-      tagName: state.tags.get(tagId)?.name || tagId,
-      success: success,
-      latency: latency,
-      error: error?.message,
-      timestamp: Date.now(),
-      pageUrl: window.location.href,
-    };
-
-    // Send to local telemetry array (for debugging)
-    if (window.__YTM_TELEMETRY__) {
-      window.__YTM_TELEMETRY__.push(event);
-    }
-
-    // Add to batch queue
-    telemetryQueue.push(event);
-
-    // Flush immediately if batch is full, otherwise schedule
-    if (telemetryQueue.length >= BATCH_SIZE) {
-      flushTelemetry();
-    } else {
-      scheduleTelemetryFlush();
-    }
-  }
-
-  // Public API
-  window.YTM = {
-    init: function() {
-      if (state.initialized) return;
-      state.initialized = true;
-      document.addEventListener('DOMContentLoaded', handlers.pageview);
-      document.addEventListener('click', handlers.click);
-      window.addEventListener('scroll', handlers.scroll, { passive: true });
-    },
-    registerTag: function(tag) {
-      state.tags.set(tag.id, tag);
-    },
-    setConsent: function(consent) {
-      state.consent = { ...state.consent, ...consent };
-    },
-    push: function(data) {
-      window.dataLayer.push(data);
-    },
-    _state: state,
-  };
-
-  // Auto-initialize
-  window.YTM.init();
-})();
+initYourTM(config);
 `;
+
+    const result = await esbuild.build({
+      stdin: {
+        contents: entryCode,
+        loader: 'ts',
+        resolveDir: process.cwd(),
+      },
+      bundle: true,
+      minify: this.config.minify,
+      sourcemap: this.config.sourcemap ? 'external' : false,
+      format: 'iife',
+      globalName: 'YTM_CORE',
+      write: false,
+      target: ['es2020'],
+    });
+
+    const jsFile = result.outputFiles.find(f => !f.path.endsWith('.map'));
+    const mapFile = result.outputFiles.find(f => f.path.endsWith('.map'));
+    const code = jsFile?.text || '';
+    const map = mapFile?.text;
+
+    return {
+      name: 'core.js',
+      code,
+      map,
+      size: Buffer.byteLength(code, 'utf8'),
+    };
   }
 
   private async generateZoneBundle(zoneId: string, zone: ZoneDefinition): Promise<CompiledBundle> {
@@ -926,7 +758,7 @@ const defineConfig = (config) => config;
   var tags = ${JSON.stringify(tagsJson)};
   tags.forEach(function(tag) {
     tag.code = eval(tag.code);
-    window.YTM.registerTag(tag);
+    window.YourTM.registerTag(tag);
   });
 `;
 

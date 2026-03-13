@@ -891,6 +891,121 @@ export interface ConfigDefinition {
 }
 
 // ============================================================================
+// Telemetry & Preview
+// ============================================================================
+
+/**
+ * Types of telemetry events for preview/debug mode.
+ */
+export enum TelemetryEventType {
+  /** Tag execution started/completed */
+  TagExecution = 'tag:execution',
+  /** Trigger condition evaluated */
+  TriggerEvaluation = 'trigger:evaluation',
+  /** DataLayer.push() called */
+  DataLayerPush = 'datalayer:push',
+  /** Variable value resolved */
+  VariableResolution = 'variable:resolution',
+  /** Consent state changed */
+  ConsentChange = 'consent:change',
+  /** Container initialization */
+  ContainerInit = 'container:init',
+  /** Error occurred in runtime */
+  Error = 'runtime:error',
+}
+
+/**
+ * Base interface for all telemetry events.
+ */
+export interface BaseTelemetryEvent {
+  /** Unique ID for the event instance */
+  id: string;
+  /** Type of event */
+  type: TelemetryEventType;
+  /** Container ID */
+  containerId: string;
+  /** Timestamp of the event */
+  timestamp: number;
+  /** Page URL where event occurred */
+  url: string;
+  /** Environment */
+  environment: Environment;
+}
+
+/**
+ * Telemetry for tag execution.
+ */
+export interface TagExecutionTelemetry extends BaseTelemetryEvent {
+  type: TelemetryEventType.TagExecution;
+  tagId: string;
+  tagName: string;
+  triggerId: string;
+  triggerName: string;
+  status: 'fired' | 'blocked' | 'error';
+  latency: number;
+  success: boolean;
+  error?: string;
+  zone?: string;
+}
+
+/**
+ * Telemetry for trigger evaluation.
+ */
+export interface TriggerEvaluationTelemetry extends BaseTelemetryEvent {
+  type: TelemetryEventType.TriggerEvaluation;
+  triggerId: string;
+  triggerName: string;
+  result: boolean;
+  conditions: Array<{
+    variable: string;
+    operator: string;
+    value: unknown;
+    actualValue: unknown;
+    passed: boolean;
+  }>;
+}
+
+/**
+ * Telemetry for DataLayer pushes.
+ */
+export interface DataLayerPushTelemetry extends BaseTelemetryEvent {
+  type: TelemetryEventType.DataLayerPush;
+  payload: Record<string, unknown>;
+  keyCount: number;
+}
+
+/**
+ * Telemetry for variable resolution.
+ */
+export interface VariableResolutionTelemetry extends BaseTelemetryEvent {
+  type: TelemetryEventType.VariableResolution;
+  variableName: string;
+  value: unknown;
+  latency: number;
+  fromCache: boolean;
+}
+
+/**
+ * Telemetry for consent changes.
+ */
+export interface ConsentChangeTelemetry extends BaseTelemetryEvent {
+  type: TelemetryEventType.ConsentChange;
+  granted: ConsentCategory[];
+  denied: ConsentCategory[];
+  previousState: Record<ConsentCategory, boolean>;
+}
+
+/**
+ * Unified Telemetry Event for WebSocket streaming and preview mode.
+ */
+export type TelemetryEvent =
+  | TagExecutionTelemetry
+  | TriggerEvaluationTelemetry
+  | DataLayerPushTelemetry
+  | VariableResolutionTelemetry
+  | ConsentChangeTelemetry;
+
+// ============================================================================
 // Runtime Types
 // ============================================================================
 

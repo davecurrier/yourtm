@@ -72,6 +72,16 @@ export {
   type BuildConfig,
   type ConfigDefinition,
 
+  // Telemetry & Preview
+  TelemetryEventType,
+  type BaseTelemetryEvent,
+  type TagExecutionTelemetry,
+  type TriggerEvaluationTelemetry,
+  type DataLayerPushTelemetry,
+  type VariableResolutionTelemetry,
+  type ConsentChangeTelemetry,
+  type TelemetryEvent,
+
   // Runtime
   type ContainerState,
   type TagFireEvent,

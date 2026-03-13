@@ -7,6 +7,12 @@ import ora from 'ora';
 import { logger } from '../utils/logger.js';
 import { loadConfig, YourTMConfig } from '../utils/config.js';
 import { Compiler, CompiledBundle } from '../compiler/index.js';
+import { 
+  type TelemetryEvent, 
+  TelemetryEventType, 
+  type TagExecutionTelemetry,
+  Environment 
+} from '@yourtm/core';
 
 interface DevOptions {
   port?: number;
@@ -14,16 +20,6 @@ interface DevOptions {
   open?: boolean;
   preview?: boolean;
   previewEndpoint?: string;
-}
-
-interface TagFireEvent {
-  tagId: string;
-  tagName: string;
-  status: 'fired' | 'blocked' | 'error';
-  latency: number;
-  timestamp: number;
-  url?: string;
-  error?: string;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -51,7 +47,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 
     // Preview mode configuration
     const previewMode = options.preview || false;
-    const previewEndpoint = options.previewEndpoint || 'http://localhost:3344/api/preview/telemetry';
+    const previewEndpoint = options.previewEndpoint || `http://${host}:${port}/_ytm/telemetry`;
 
     // Initial build
     spinner.text = 'Building container...';
@@ -59,12 +55,17 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     let bundles = await buildAndReport(compiler);
 
     // Create HTTP server
-    const previewConfig = previewMode ? { previewMode, previewEndpoint } : null;
+    const previewConfig = { 
+      previewMode: true, // Always enable for dev server
+      previewEndpoint,
+      environment: Environment.Development
+    };
+    
     const server = createServer((req, res) => {
       handleRequest(req, res, config, bundles, previewConfig);
     });
 
-    // Create WebSocket server for hot reload
+    // Create WebSocket server for hot reload and telemetry
     const wss = new WebSocketServer({ server });
     const clients = new Set<WebSocket>();
 
@@ -74,8 +75,17 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 
       ws.on('message', (data) => {
         try {
-          const event = JSON.parse(data.toString()) as TagFireEvent;
-          handleTagEvent(event);
+          const event = JSON.parse(data.toString()) as TelemetryEvent;
+          
+          // Broadcast to all other clients (e.g., Desktop App)
+          const message = JSON.stringify({ type: 'telemetry', event });
+          clients.forEach(client => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+              client.send(message);
+            }
+          });
+
+          handleTelemetryEvent(event);
         } catch {
           // Ignore invalid messages
         }
@@ -130,11 +140,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       const tableRows = [
         { label: 'Local', value: localUrl },
         { label: 'Container', value: config.containerId },
-        { label: 'Mode', value: previewMode ? 'development + preview' : 'development' },
+        { label: 'Mode', value: 'development + preview' },
       ];
-      if (previewMode) {
-        tableRows.push({ label: 'Preview', value: previewEndpoint });
-      }
       logger.table(tableRows);
       logger.newline();
 
@@ -185,7 +192,7 @@ function handleRequest(
   res: ServerResponse,
   config: YourTMConfig,
   bundles: CompiledBundle[],
-  previewConfig: { previewMode: boolean; previewEndpoint: string } | null
+  previewConfig: { previewMode: boolean; previewEndpoint: string; environment: Environment }
 ): void {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
   const pathname = url.pathname;
@@ -201,6 +208,24 @@ function handleRequest(
     return;
   }
 
+  // Handle telemetry POST from beacon/fetch
+  if (pathname === '/_ytm/telemetry' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const event = JSON.parse(body) as TelemetryEvent;
+        handleTelemetryEvent(event);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok' }));
+      } catch (e) {
+        res.writeHead(400);
+        res.end('Invalid JSON');
+      }
+    });
+    return;
+  }
+
   // Serve bundle files
   const filename = pathname.slice(1) || 'index.html';
   const bundle = bundles.find(b => b.name === filename);
@@ -213,14 +238,29 @@ function handleRequest(
 
     // Inject preview config into core.js
     let code = bundle.code;
-    if (filename === 'core.js' && previewConfig) {
-      // Inject preview config at the start of the bundle
+    if (filename === 'core.js') {
+      // Inject preview config and WebSocket bridge
       const previewScript = `
 ;(function(){
-  window.__YOURTM_PREVIEW__ = {
-    previewMode: true,
-    previewEndpoint: "${previewConfig.previewEndpoint}"
+  window.__YOURTM_PREVIEW__ = ${JSON.stringify(previewConfig)};
+  
+  // WebSocket Bridge for real-time telemetry
+  const ws = new WebSocket('ws://' + window.location.host);
+  const queue = [];
+  
+  ws.onopen = () => {
+    while(queue.length) ws.send(JSON.stringify(queue.shift()));
   };
+  
+  if (window.YourTM) {
+    window.YourTM.onTelemetry(function(e) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(e));
+      } else {
+        queue.push(e);
+      }
+    });
+  }
 })();
 `;
       code = previewScript + code;
@@ -323,35 +363,53 @@ function generateIndexPage(config: YourTMConfig, bundles: CompiledBundle[]): str
 </html>`;
 }
 
-function handleTagEvent(event: TagFireEvent): void {
+function handleTelemetryEvent(event: TelemetryEvent): void {
   const timestamp = new Date(event.timestamp).toLocaleTimeString();
-  const latencyStr = event.latency.toFixed(1) + 'ms';
 
-  switch (event.status) {
-    case 'fired':
-      console.log(
-        logger.chalk.gray(`[${timestamp}]`) + ' ' +
-        logger.chalk.green('✓') + ' ' +
-        logger.chalk.white(event.tagName) + ' ' +
-        logger.chalk.gray(latencyStr)
-      );
+  switch (event.type) {
+    case TelemetryEventType.TagExecution: {
+      const e = event as TagExecutionTelemetry;
+      const latencyStr = e.latency.toFixed(1) + 'ms';
+      
+      switch (e.status) {
+        case 'fired':
+          console.log(
+            logger.chalk.gray(`[${timestamp}]`) + ' ' +
+            logger.chalk.green('✓') + ' ' +
+            logger.chalk.white(e.tagName) + ' ' +
+            logger.chalk.gray(latencyStr)
+          );
+          break;
+        case 'blocked':
+          console.log(
+            logger.chalk.gray(`[${timestamp}]`) + ' ' +
+            logger.chalk.yellow('○') + ' ' +
+            logger.chalk.white(e.tagName) + ' ' +
+            logger.chalk.yellow('(blocked)')
+          );
+          break;
+        case 'error':
+          console.log(
+            logger.chalk.gray(`[${timestamp}]`) + ' ' +
+            logger.chalk.red('✗') + ' ' +
+            logger.chalk.white(e.tagName) + ' ' +
+            logger.chalk.red(e.error || 'Unknown error')
+          );
+          break;
+      }
       break;
-    case 'blocked':
-      console.log(
-        logger.chalk.gray(`[${timestamp}]`) + ' ' +
-        logger.chalk.yellow('○') + ' ' +
-        logger.chalk.white(event.tagName) + ' ' +
-        logger.chalk.yellow('(blocked)')
-      );
+    }
+    
+    case TelemetryEventType.TriggerEvaluation: {
+      // Quietly log trigger evaluations unless they're high signal
       break;
-    case 'error':
-      console.log(
-        logger.chalk.gray(`[${timestamp}]`) + ' ' +
-        logger.chalk.red('✗') + ' ' +
-        logger.chalk.white(event.tagName) + ' ' +
-        logger.chalk.red(event.error || 'Unknown error')
-      );
+    }
+    
+    case TelemetryEventType.DataLayerPush: {
+      // Optional: log dataLayer pushes in dev console
+      // console.log(logger.chalk.gray(`[${timestamp}]`) + ' ' + logger.chalk.blue('→') + ' dataLayer.push', (event as any).payload);
       break;
+    }
   }
 }
 

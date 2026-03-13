@@ -399,6 +399,7 @@ export class CloudflareClient {
       bindings?: WorkerBinding[];
       compatibilityDate?: string;
       compatibilityFlags?: string[];
+      migrations?: Record<string, unknown>;
     }
   ): Promise<WorkerScript> {
     const metadata: WorkerDeploymentMetadata = {
@@ -406,6 +407,7 @@ export class CloudflareClient {
       compatibility_date: options?.compatibilityDate || '2024-01-01',
       compatibility_flags: options?.compatibilityFlags,
       bindings: options?.bindings,
+      migrations: options?.migrations,
     };
 
     const formData = new FormData();

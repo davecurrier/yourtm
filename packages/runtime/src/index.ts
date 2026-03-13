@@ -17,6 +17,7 @@ export {
   loadChunk,
   executeTag,
   executeTrigger,
+  onTelemetry,
   getTags,
   getExecutedTags,
   getTelemetry,
@@ -26,7 +27,6 @@ export {
   type TagConfig,
   type TagContext,
   type ZoneConfig,
-  type Telemetry,
   type RuntimeConfig
 } from './core';
 
@@ -86,11 +86,12 @@ import * as dataLayer from './dataLayer';
 import * as triggers from './triggers';
 import * as consent from './consent';
 
-import type { VariableDefinition } from '@yourtm/core';
+import { type VariableDefinition, Environment } from '@yourtm/core';
 
 // Types for external use
 export interface YourTMConfig {
   containerId: string;
+  environment?: Environment;
   previewMode?: boolean;
   previewEndpoint?: string;
   debug?: boolean;
@@ -107,6 +108,7 @@ export function initYourTM(config: YourTMConfig): void {
   // Initialize core
   core.init({
     containerId: config.containerId,
+    environment: config.environment || Environment.Production,
     previewMode: config.previewMode,
     previewEndpoint: config.previewEndpoint,
     debug: config.debug
@@ -167,6 +169,9 @@ if (typeof window !== 'undefined') {
     consent: consent.ConsentAPI,
     fire: triggers.fireEvent,
     executeTag: core.executeTag,
+    onTelemetry: core.onTelemetry,
+    registerTag: core.registerTag,
+    registerZone: core.registerZone,
     getTelemetry: core.getTelemetry,
     version: '0.1.0'
   };

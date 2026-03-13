@@ -3,8 +3,15 @@
  * Tag registration, execution, zone detection, and performance tracking
  */
 
-import type { VariableDefinition } from '@yourtm/core';
-import { getConsent, hasConsent, type ConsentState, type ConsentCategory } from './consent';
+import { 
+  type VariableDefinition, 
+  type TelemetryEvent, 
+  TelemetryEventType, 
+  Environment,
+  type TagExecutionTelemetry,
+  type ConsentCategory
+} from '@yourtm/core';
+import { getConsent, hasConsent, type ConsentState } from './consent';
 import { resolveVariable } from './variables';
 
 // Types
@@ -33,17 +40,9 @@ export interface ZoneConfig {
   tags: string[];
 }
 
-export interface Telemetry {
-  tagId: string;
-  timestamp: number;
-  latency: number;
-  success: boolean;
-  error?: string;
-  zone?: string;
-}
-
 export interface RuntimeConfig {
   containerId: string;
+  environment?: Environment;
   previewMode?: boolean;
   previewEndpoint?: string;
   debug?: boolean;
@@ -54,7 +53,8 @@ const tags = new Map<string, TagConfig>();
 const zones = new Map<string, ZoneConfig>();
 const variables = new Map<string, VariableDefinition>();
 const executed = new Set<string>();
-const telemetry: Telemetry[] = [];
+const telemetry: TelemetryEvent[] = [];
+const telemetryListeners = new Set<(e: TelemetryEvent) => void>();
 let cfg: RuntimeConfig | null = null;
 
 // Performance tracking
@@ -65,7 +65,36 @@ const now = typeof performance !== 'undefined' ? () => performance.now() : Date.
  */
 export function init(c: RuntimeConfig): void {
   if (cfg) return;
-  cfg = c;
+  cfg = {
+    environment: Environment.Production,
+    ...c
+  };
+  
+  if (cfg.debug) {
+    console.log(`[YourTM] Initialized (Env: ${cfg.environment}, Preview: ${cfg.previewMode})`);
+  }
+}
+
+/**
+ * Register a telemetry listener
+ */
+export function onTelemetry(cb: (e: TelemetryEvent) => void): () => void {
+  telemetryListeners.add(cb);
+  return () => telemetryListeners.delete(cb);
+}
+
+/**
+ * Internal helper to create a base telemetry event
+ */
+function createBaseEvent(type: TelemetryEventType): any {
+  return {
+    id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type,
+    containerId: cfg?.containerId || 'unknown',
+    timestamp: Date.now(),
+    url: location.href,
+    environment: cfg?.environment || Environment.Production,
+  };
 }
 
 /**
@@ -135,13 +164,30 @@ export function loadChunk(id: string): Promise<void> {
  */
 export async function executeTag(
   tagId: string,
-  ctx: Partial<TagContext> = {}
-): Promise<Telemetry | null> {
+  ctx: Partial<TagContext> = {},
+  triggerId: string = 'manual'
+): Promise<TagExecutionTelemetry | null> {
   const tag = tags.get(tagId);
   if (!tag) return null;
 
   // Check consent
-  if (tag.consent?.length && !tag.consent.every(hasConsent)) return null;
+  if (tag.consent?.length && !tag.consent.every(hasConsent)) {
+    const t = {
+      ...createBaseEvent(TelemetryEventType.TagExecution),
+      tagId,
+      tagName: tag.name,
+      triggerId,
+      triggerName: triggerId,
+      status: 'blocked',
+      latency: 0,
+      success: false,
+      error: 'Consent required',
+      zone: detectZone()?.id
+    } as TagExecutionTelemetry;
+    
+    trackEvent(t);
+    return t;
+  }
 
   // Resolve variables for the tag context (Lazy resolution via Proxy)
   const tagVariables: Record<string, any> = {};
@@ -172,9 +218,13 @@ export async function executeTag(
     error = e instanceof Error ? e.message : String(e);
   }
 
-  const t: Telemetry = {
+  const t: TagExecutionTelemetry = {
+    ...createBaseEvent(TelemetryEventType.TagExecution),
     tagId,
-    timestamp: Date.now(),
+    tagName: tag.name,
+    triggerId,
+    triggerName: triggerId,
+    status: success ? 'fired' : 'error',
     latency: now() - start,
     success,
     error,
@@ -182,11 +232,7 @@ export async function executeTag(
   };
 
   executed.add(tagId);
-  telemetry.push(t);
-
-  if (cfg?.previewMode && cfg.previewEndpoint) {
-    sendTelemetry(t);
-  }
+  trackEvent(t);
 
   return t;
 }
@@ -197,24 +243,54 @@ export async function executeTag(
 export async function executeTrigger(
   triggerId: string,
   ctx: Partial<TagContext> = {}
-): Promise<Telemetry[]> {
+): Promise<TagExecutionTelemetry[]> {
   const zone = detectZone();
   const list = Array.from(tags.values())
     .filter(t => t.triggers.includes(triggerId) && (!zone || !t.zone || t.zone === zone.id))
     .sort((a, b) => (b.priority || 0) - (a.priority || 0));
 
-  const results = await Promise.all(list.map(t => executeTag(t.id, ctx)));
-  return results.filter((t): t is Telemetry => t !== null);
+  const results = await Promise.all(list.map(t => executeTag(t.id, ctx, triggerId)));
+  return results.filter((t): t is TagExecutionTelemetry => t !== null);
+}
+
+/**
+ * Track an event locally and send to telemetry endpoint
+ */
+function trackEvent(e: TelemetryEvent): void {
+  telemetry.push(e);
+  
+  // Notify listeners
+  telemetryListeners.forEach(fn => fn(e));
+
+  // Send to server in preview mode
+  if (cfg?.previewMode && cfg.previewEndpoint) {
+    sendTelemetry(e);
+  }
+  
+  if (cfg?.debug) {
+    const icon = e.type === TelemetryEventType.TagExecution && (e as TagExecutionTelemetry).success ? '✓' : '○';
+    console.log(`[YourTM] ${icon} ${e.type}:`, e);
+  }
 }
 
 /**
  * Send telemetry to preview endpoint
  */
-function sendTelemetry(t: Telemetry): void {
+function sendTelemetry(e: TelemetryEvent): void {
   if (!cfg?.previewEndpoint) return;
-  const body = JSON.stringify({ type: 'tag_execution', containerId: cfg.containerId, ...t });
-  navigator.sendBeacon?.(cfg.previewEndpoint, body) ||
-    fetch(cfg.previewEndpoint, { method: 'POST', body, keepalive: true }).catch(() => {});
+  const body = JSON.stringify(e);
+  
+  // Try Beacon API first for better performance on page exit
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(cfg.previewEndpoint, body);
+  } else {
+    fetch(cfg.previewEndpoint, { 
+      method: 'POST', 
+      body, 
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json' }
+    }).catch(() => {});
+  }
 }
 
 /**

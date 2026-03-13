@@ -93,6 +93,7 @@ export interface WorkerBinding {
   name: string;
   type: 'kv_namespace' | 'durable_object_namespace' | 'r2_bucket' | 'service' | 'plain_text' | 'secret_text' | 'json';
   namespace_id?: string;
+  class_name?: string;
   text?: string;
 }
 
