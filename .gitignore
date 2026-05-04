@@ -33,3 +33,6 @@ Thumbs.db
 # YourTM Temp
 .ytm-temp
 packages/desktop/
+
+# Site-specific examples (kept local, not published)
+examples/vital-design/
