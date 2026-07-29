@@ -1,0 +1,18 @@
+# SwiftPM build products
+.build/
+.swiftpm/
+*.xcodeproj
+
+# Assembled app bundle (build-app.sh)
+dist/
+
+# Generated engine resources — regenerate with scripts/build-js-runtime.sh.
+# The esbuild binary (~10 MB) and the bundled ts-morph runtime (~13 MB) are
+# build outputs, not sources: they come from node_modules and the JS entry in
+# scripts/js/.
+Sources/YourTM/Resources/esbuild
+Sources/YourTM/Resources/ytm-script-runtime.js
+
+# Generated app icon — regenerate from icon/GenerateIcon.swift
+icon/YourTM.icns
+icon/YourTM.iconset/
