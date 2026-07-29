@@ -177,6 +177,41 @@ never echo a body starting with `<`.
 *Verify:* connect a site, publish a bundle, confirm `bundle_version` advances on
 the WordPress side.
 
+### Phase 5b — containers as document packages
+
+Goal: a container is **one Finder item**, not a loose folder of `.ts` files —
+`Vital Design.yourtm`, double-clickable, with *Show Package Contents* to drill
+in. Sequenced after Phase 3 because it changes how the project path is resolved.
+
+**Not an option: storing sources inside `YourTM.app`.** Verified 2026-07-29 —
+writing a single file into the bundle immediately invalidates the signature
+(`a sealed resource is missing or invalid`). It would also be destroyed by every
+app update, and fails outright when macOS translocates a downloaded app to a
+read-only path.
+
+The correct pattern is a **document package**: a directory declared with
+`LSTypeIsPackage` in `Info.plist`, which Finder presents as a single file. Same
+mechanism as `.sketch`, `.rtfd`, `.xcodeproj` — and as `.app` itself.
+
+Why this over hiding sources in `~/Library/Application Support/`: a package is
+still a **real directory**, so esbuild, ts-morph, external editors and **git all
+keep working unchanged**. `projects/vital-tag` is a git repo; that survives.
+Nothing in path resolution needs to change beyond pointing at the package.
+
+Work:
+- Declare the exported type + `LSTypeIsPackage` and a document icon.
+- Register `.yourtm` as a document type so double-click opens the app.
+- Migration: existing plain-directory projects must keep opening. Detect and
+  offer conversion; never silently move a user's files.
+- Sources become externally editable (see below), so the app must watch for
+  on-disk changes and reload — `desktop/src/lib/file-watcher.ts` and the
+  `project/watch` route become FSEvents in Swift.
+
+*Verify:* Finder shows one item with the right icon; *Show Package Contents*
+reveals `yourtm/`; double-click opens the container; a plain-directory project
+still opens; compiling from inside a package produces bundles identical to
+compiling from the directory form.
+
 ### Phase 6 — delete the engine
 Remove `BackendManager`'s spawn path, delete `packages/desktop`, drop `next` from
 the workspace. Confirm the app launches and functions with **no Node on `PATH`**.
