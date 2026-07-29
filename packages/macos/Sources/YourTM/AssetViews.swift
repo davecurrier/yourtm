@@ -369,6 +369,8 @@ struct AssetDetailView: View {
             .foregroundStyle(.secondary)
             .help("Delete \(asset.name)")
 
+            externalEditorControls
+
             if hasChanges {
                 Label("Unsaved changes", systemImage: "pencil.circle")
                     .font(.callout)
@@ -390,6 +392,48 @@ struct AssetDetailView: View {
         }
         .padding(12)
         .background(.bar)
+    }
+
+    /// Open this asset's source in an external editor, or reveal it in Finder.
+    ///
+    /// Hidden entirely when the engine reported no `sourcePath` — a menu whose
+    /// every item fails is worse than no menu.
+    @ViewBuilder
+    private var externalEditorControls: some View {
+        if let fileURL = EditorService.fileURL(for: asset, projectPath: state.projectPath) {
+            let editors = EditorService.available(for: fileURL)
+            Menu {
+                if let preferred = EditorService.effective(for: fileURL) {
+                    Button("Edit in \(preferred.name)") { EditorService.open(fileURL, using: preferred) }
+                }
+                if editors.count > 1 {
+                    Divider()
+                    Menu("Open With") {
+                        ForEach(editors) { editor in
+                            Button(editor.name) {
+                                // Choosing explicitly also sets the default.
+                                EditorService.preferred = editor
+                                EditorService.open(fileURL, using: editor)
+                            }
+                        }
+                    }
+                }
+                Divider()
+                Button("Reveal in Finder") { EditorService.revealInFinder(fileURL) }
+                Button("Copy Path") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(fileURL.path, forType: .string)
+                }
+            } label: {
+                Image(systemName: "arrow.up.forward.app")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .foregroundStyle(.secondary)
+            .help(hasChanges
+                  ? "Open \(asset.sourcePath ?? "source") externally — save first, the file on disk does not have your unsaved edits"
+                  : "Open \(asset.sourcePath ?? "source") in an external editor")
+        }
     }
 
     private func save() async {

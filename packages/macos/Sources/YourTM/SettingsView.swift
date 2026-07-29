@@ -9,6 +9,9 @@ struct SettingsView: View {
     @State private var anthropicKey = ""
     @State private var openaiKey = ""
     @State private var saving = false
+    /// Same UserDefaults key EditorService reads, so the picker and the
+    /// footer menu can never disagree about the chosen editor.
+    @AppStorage("externalEditorPath") private var editorPath = ""
     @State private var loaded = false
 
     var body: some View {
@@ -43,6 +46,30 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
+            }
+
+            Section("External Editor") {
+                let editors = EditorService.available()
+                if editors.isEmpty {
+                    Label("No text editor found that opens .ts files.", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else {
+                    Picker("Open sources in", selection: $editorPath) {
+                        Text("Automatic (\(editors.first?.name ?? "none"))").tag("")
+                        ForEach(editors) { editor in
+                            Text(editor.name).tag(editor.url.path)
+                        }
+                    }
+                    .onChange(of: editorPath) { _, newValue in
+                        EditorService.preferred = newValue.isEmpty
+                            ? nil
+                            : EditorService.Editor(url: URL(fileURLWithPath: newValue))
+                    }
+                }
+                Text("macOS registers .ts as an MPEG-2 video stream, so the system default for a tag file can be a video player. Only apps that also handle text or source code are offered here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             HStack {
