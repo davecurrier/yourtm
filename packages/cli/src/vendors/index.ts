@@ -12,7 +12,6 @@ export interface VendorTagResult {
   code: string;
   consent?: string[];
   description?: string;
-  proxyScript?: string; // If we should proxy this script
 }
 
 export interface GTMTag {
@@ -75,7 +74,6 @@ function detectFromCustomTemplate(tag: GTMTag): VendorTagResult | null {
       type: 'setup',
       description: 'LinkedIn Insight Tag',
       consent: ['marketing'],
-      proxyScript: '/ytm/s/linkedin',
       code: `
     if (window.lintrk) return;
 
@@ -83,7 +81,7 @@ function detectFromCustomTemplate(tag: GTMTag): VendorTagResult | null {
     window._linkedin_data_partner_ids.push('${partnerId}');
 
     const script = document.createElement('script');
-    script.src = '/ytm/s/linkedin';
+    script.src = 'https://snap.licdn.com/li.lms-analytics/insight.min.js';
     script.async = true;
     document.head.appendChild(script);`
     };
@@ -133,12 +131,11 @@ const VENDOR_DETECTORS: Record<string, (tag: GTMTag) => VendorTagResult> = {
       type: 'config',
       description: 'Google Analytics 4 Configuration',
       consent: ['analytics'],
-      proxyScript: '/ytm/s/gtag',
       code: `
     if (window.gtag) return;
 
     const script = document.createElement('script');
-    script.src = '/ytm/s/gtag?id=${measurementId}';
+    script.src = 'https://www.googletagmanager.com/gtag/js?id=${measurementId}';
     script.async = true;
     script.onload = () => {
       window.dataLayer = window.dataLayer || [];
@@ -181,12 +178,11 @@ const VENDOR_DETECTORS: Record<string, (tag: GTMTag) => VendorTagResult> = {
       type: 'config',
       description: 'Google Analytics 4 Configuration',
       consent: ['analytics'],
-      proxyScript: '/ytm/s/gtag',
       code: `
     if (window.gtag) return;
 
     const script = document.createElement('script');
-    script.src = '/ytm/s/gtag?id=${tagId}';
+    script.src = 'https://www.googletagmanager.com/gtag/js?id=${tagId}';
     script.async = true;
     script.onload = () => {
       window.dataLayer = window.dataLayer || [];
@@ -240,7 +236,6 @@ ${configCode}
       type: 'setup',
       description: 'Meta (Facebook) Pixel',
       consent: ['marketing'],
-      proxyScript: '/ytm/s/meta',
       code: `
     if (window.fbq) return;
 
@@ -248,7 +243,7 @@ ${configCode}
     n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
     n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
     t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
-    document,'script','/ytm/s/meta');
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
 
     fbq('init', '${pixelId}');
     fbq('track', 'PageView');`
@@ -294,7 +289,6 @@ ${configCode}
       type: 'setup',
       description: 'LinkedIn Insight Tag',
       consent: ['marketing'],
-      proxyScript: '/ytm/s/linkedin',
       code: `
     if (window.lintrk) return;
 
@@ -302,7 +296,7 @@ ${configCode}
     window._linkedin_data_partner_ids.push('${partnerId}');
 
     const script = document.createElement('script');
-    script.src = '/ytm/s/linkedin';
+    script.src = 'https://snap.licdn.com/li.lms-analytics/insight.min.js';
     script.async = true;
     document.head.appendChild(script);`
     };
@@ -333,14 +327,13 @@ ${configCode}
       type: 'setup',
       description: 'Microsoft Ads UET Tag',
       consent: ['marketing'],
-      proxyScript: '/ytm/s/msads',
       code: `
     if (window.uetq) return;
 
     window.uetq = window.uetq || [];
 
     const script = document.createElement('script');
-    script.src = '/ytm/s/msads';
+    script.src = 'https://bat.bing.com/bat.js';
     script.async = true;
     script.onload = () => {
       window.uetq.push('config', '${tagId}', { ti: '${tagId}' });
@@ -540,7 +533,6 @@ function detectFromHTML(tag: GTMTag): VendorTagResult | null {
         type: 'setup',
         description: 'Meta (Facebook) Pixel',
         consent: ['marketing'],
-        proxyScript: '/ytm/s/meta',
         code: `
     if (window.fbq) return;
 
@@ -548,7 +540,7 @@ function detectFromHTML(tag: GTMTag): VendorTagResult | null {
     n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
     n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
     t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
-    document,'script','/ytm/s/meta');
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
 
     fbq('init', '${match[1]}');
     fbq('track', 'PageView');`
@@ -563,7 +555,6 @@ function detectFromHTML(tag: GTMTag): VendorTagResult | null {
         type: 'setup',
         description: 'LinkedIn Insight Tag',
         consent: ['marketing'],
-        proxyScript: '/ytm/s/linkedin',
         code: `
     if (window.lintrk) return;
 
@@ -571,7 +562,7 @@ function detectFromHTML(tag: GTMTag): VendorTagResult | null {
     window._linkedin_data_partner_ids.push('${match[1]}');
 
     const script = document.createElement('script');
-    script.src = '/ytm/s/linkedin';
+    script.src = 'https://snap.licdn.com/li.lms-analytics/insight.min.js';
     script.async = true;
     document.head.appendChild(script);`
       })
@@ -585,14 +576,13 @@ function detectFromHTML(tag: GTMTag): VendorTagResult | null {
         type: 'setup',
         description: 'Microsoft Ads UET Tag',
         consent: ['marketing'],
-        proxyScript: '/ytm/s/msads',
         code: `
     if (window.uetq) return;
 
     window.uetq = window.uetq || [];
 
     const script = document.createElement('script');
-    script.src = '/ytm/s/msads';
+    script.src = 'https://bat.bing.com/bat.js';
     script.async = true;
     script.onload = () => {
       window.uetq.push('config', '${match[1]}', { ti: '${match[1]}' });
@@ -627,10 +617,9 @@ function detectFromHTML(tag: GTMTag): VendorTagResult | null {
           vendor: 'optinmonster',
           type: 'setup',
           description: 'OptinMonster Campaign',
-          proxyScript: '/ytm/s/optinmonster',
           code: `
     const script = document.createElement('script');
-    script.src = '/ytm/s/optinmonster';
+    script.src = 'https://a.omappapi.com/app/js/api.min.js';
     script.async = true;
     script.dataset.user = '${userId}';
     script.dataset.campaign = '${match[1]}';
@@ -729,12 +718,11 @@ function detectFromHTML(tag: GTMTag): VendorTagResult | null {
         type: 'config',
         description: 'Google Analytics',
         consent: ['analytics'],
-        proxyScript: '/ytm/s/gtag',
         code: `
     if (window.gtag) return;
 
     const script = document.createElement('script');
-    script.src = '/ytm/s/gtag?id=${match[1]}';
+    script.src = 'https://www.googletagmanager.com/gtag/js?id=${match[1]}';
     script.async = true;
     script.onload = () => {
       window.dataLayer = window.dataLayer || [];
