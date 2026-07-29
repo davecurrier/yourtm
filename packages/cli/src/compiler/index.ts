@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile, unlink, rmdir } from 'node:fs/promises';
 import { join, basename, dirname, relative, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import process from 'node:process';
 import * as esbuild from 'esbuild';
 import { glob } from 'glob';
@@ -524,6 +524,52 @@ const defineConfig = (config) => config;
     return bundles;
   }
 
+  /**
+   * Locate @yourtm/runtime's source entry point.
+   *
+   * This has to work from three very different call sites: the `ytm` CLI
+   * (loaded from packages/cli/dist), the desktop engine (bundled by Next.js,
+   * where import.meta.url is rewritten and cwd is packages/desktop), and a
+   * plain monorepo-root invocation. So: gather candidates by walking up from
+   * both this module and cwd, and take the first that exists.
+   */
+  private resolveRuntimeSource(): string {
+    const candidates: string[] = [];
+    const add = (p: string) => { if (!candidates.includes(p)) candidates.push(p); };
+
+    const walkUp = (start: string) => {
+      let dir = start;
+      for (let i = 0; i < 7; i++) {
+        add(resolve(dir, 'packages/runtime/src/index.ts'));
+        add(resolve(dir, 'node_modules/@yourtm/runtime/src/index.ts'));
+        add(resolve(dir, '../runtime/src/index.ts'));
+        const parent = dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+      }
+    };
+
+    // 1. Relative to this module — correct for CLI usage (src or dist)
+    try {
+      walkUp(dirname(fileURLToPath(import.meta.url)));
+    } catch {
+      // import.meta.url may be rewritten by a bundler; cwd walk covers it
+    }
+    // 2. Relative to the project being compiled (tagsDir is absolute)
+    if (this.config.tagsDir) walkUp(this.config.tagsDir);
+    // 3. Relative to cwd
+    walkUp(process.cwd());
+
+    const found = candidates.find(p => existsSync(p));
+    if (!found) {
+      throw new Error(
+        '@yourtm/runtime source not found. Looked in:\n' +
+        candidates.slice(0, 10).map(p => `  ${p}`).join('\n')
+      );
+    }
+    return found;
+  }
+
   private async generateCoreBundle(): Promise<CompiledBundle> {
     const triggers = Array.from(this.triggers.values());
     const variables = Array.from(this.variables.values());
@@ -544,8 +590,8 @@ const defineConfig = (config) => config;
 
     // Create a temporary entry point that initializes the runtime
     // We point to the actual source file in the workspace
-    const runtimeSrcPath = resolve(process.cwd(), 'packages/runtime/src/index.ts');
-    
+    const runtimeSrcPath = this.resolveRuntimeSource();
+
     const entryCode = `
 import { initYourTM } from '${runtimeSrcPath}';
 

@@ -18,6 +18,7 @@ import { monitorCommand } from './commands/monitor.js';
 import { createCommand } from './commands/create.js';
 import { pushCommand, cloneCommand, pullCommand, logCommand, loginCommand } from './commands/source.js';
 import { analyzeCommand } from './commands/analyze.js';
+import { guiCommand } from './commands/gui.js';
 
 const program = new Command();
 
@@ -156,11 +157,11 @@ program
 const deploy = program
   .command('deploy [environment]')
   .description('Deploy a pushed version to an environment')
-  .option('-v, --version <version>', 'Specific version to deploy (default: latest pushed)')
+  .option('--ver <version>', 'Specific version to deploy (default: latest pushed)')
   .option('-d, --dry-run', 'Simulate deployment without making changes')
   .option('-f, --force', 'Force deployment (skip checks and confirmations)')
   .action(async (environment, options) => {
-    await deployCommand({ ...options, env: environment || 'staging' });
+    await deployCommand({ ...options, version: options.ver, env: environment || 'staging' });
   });
 
 // Deploy init subcommand - Cloudflare infrastructure setup
@@ -339,6 +340,19 @@ program
   .description('Authenticate with a YourTM access token')
   .action(async (token) => {
     await loginCommand(token);
+  });
+
+// GUI command
+program
+  .command('gui')
+  .description('Launch the desktop GUI')
+  .option('-p, --port <port>', 'Port for the dev server', '3344')
+  .option('--no-browser', 'Start dev server only (open in browser instead of Electron)')
+  .action(async (options) => {
+    await guiCommand({
+      port: parseInt(options.port, 10),
+      noBrowser: options.browser === false,
+    });
   });
 
 // Error handling

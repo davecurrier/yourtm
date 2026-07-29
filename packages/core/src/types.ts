@@ -875,6 +875,25 @@ export interface ConfigDefinition {
     /** Preview token for authentication */
     token?: string;
   };
+  /** Cloudflare deployment settings */
+  cloudflare?: {
+    /** Cloudflare account ID */
+    accountId?: string;
+    /** R2 bucket name */
+    r2BucketName?: string;
+    /** R2 public URL */
+    r2PublicUrl?: string;
+  };
+  /** WordPress sites to sync bundles to after deploy */
+  wordpress?: {
+    /** List of WordPress sites */
+    sites: Array<{
+      /** Site URL (e.g., https://www.example.com) */
+      url: string;
+      /** API key configured in the WordPress plugin */
+      apiKey: string;
+    }>;
+  };
   /** Analytics/telemetry collection */
   telemetry?: {
     /** Enable telemetry */

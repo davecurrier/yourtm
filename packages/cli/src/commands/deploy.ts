@@ -5,7 +5,7 @@
  * You must `ytm push` before you can `ytm deploy`.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -108,7 +108,6 @@ function hashContent(content: string): string {
 
 function collectLocalFiles(cwd: string): Map<string, string> {
   const files = new Map<string, string>();
-  const { readdirSync } = require('node:fs');
 
   function walkDir(dir: string, baseDir: string) {
     const entries = readdirSync(dir, { withFileTypes: true });
@@ -476,6 +475,58 @@ export async function deployCommand(options: DeployOptions = {}): Promise<void> 
       logger.newline();
       logger.info('Embed in your site:');
       console.log(logger.chalk.cyan(`  <script src="${r2PublicUrl}/${environment}/core.js" async></script>`));
+    }
+
+    // Sync to WordPress sites (if configured)
+    const wpConfig = (config as any).wordpress;
+    if (wpConfig?.sites?.length > 0) {
+      logger.newline();
+      logger.info(`Syncing to ${wpConfig.sites.length} WordPress site(s)...`);
+
+      for (const site of wpConfig.sites) {
+        const siteUrl = site.url.replace(/\/+$/, '');
+        const syncUrl = `${siteUrl}/wp-json/yourtm/v1/sync`;
+        const wpSpinner = ora(`  → ${siteUrl}`).start();
+
+        try {
+          const bundlePayload = bundles.map(b => ({
+            name: `${b.name}.js`,
+            code: b.code,
+            hash: hashContent(b.code),
+            size: Buffer.byteLength(b.code, 'utf8'),
+          }));
+
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 30000);
+
+          const res = await fetch(syncUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-YourTM-Key': site.apiKey,
+            },
+            body: JSON.stringify({
+              bundles: bundlePayload,
+              version: targetVersion,
+              container_id: config.containerId,
+              environment,
+            }),
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeout);
+
+          if (res.ok) {
+            wpSpinner.succeed(`  → ${siteUrl} synced`);
+          } else {
+            const errText = await res.text().catch(() => `HTTP ${res.status}`);
+            wpSpinner.warn(`  → ${siteUrl} failed: ${errText.slice(0, 100)}`);
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          wpSpinner.warn(`  → ${siteUrl} failed: ${msg}`);
+        }
+      }
     }
 
     logger.newline();

@@ -335,7 +335,8 @@ export class RUMDurableObject {
 
     return {
       totalEvents,
-      successRate: totalEvents > 0 ? (successCount / totalEvents) * 100 : 100,
+      // null, not 100 — "no data" is not "perfectly healthy".
+      successRate: totalEvents > 0 ? (successCount / totalEvents) * 100 : null,
       avgLatency: avg,
       p50Latency: p50,
       p95Latency: p95,

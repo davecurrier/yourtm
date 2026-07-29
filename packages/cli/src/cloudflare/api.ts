@@ -485,6 +485,95 @@ export class CloudflareClient {
   /**
    * Get Worker subdomain
    */
+  // ============================================
+  // Worker Routes (zone-scoped)
+  //
+  // Routes are a SEPARATE API from script upload. Deploying a script does not
+  // bind any route — a worker with no route is unreachable on your domain. This
+  // is what made /ytmcore.js 404 while the script itself was deployed fine.
+  //
+  // Note zone-scoped endpoints need a *user*-owned API token; account-owned
+  // tokens (cfat_…) cannot hold zone permissions.
+  // ============================================
+
+  /** Look up a zone by name, e.g. "example.com". */
+  async getZoneByName(name: string): Promise<{ id: string; name: string } | null> {
+    try {
+      const zones = await this.get<Array<{ id: string; name: string }>>(
+        `/zones?name=${encodeURIComponent(name)}`
+      );
+      return zones?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async listWorkerRoutes(zoneId: string): Promise<Array<{ id: string; pattern: string; script: string }>> {
+    return this.get<Array<{ id: string; pattern: string; script: string }>>(
+      `/zones/${zoneId}/workers/routes`
+    );
+  }
+
+  async createWorkerRoute(zoneId: string, pattern: string, script: string): Promise<{ id: string }> {
+    return this.post<{ id: string }>(`/zones/${zoneId}/workers/routes`, { pattern, script });
+  }
+
+  /**
+   * Ensure every pattern is bound to `script`, leaving existing correct routes
+   * alone and re-pointing ones that target a different script.
+   *
+   * Returns a per-pattern outcome so the caller can surface partial success —
+   * a missing zone permission shouldn't fail the whole deploy.
+   */
+  async syncWorkerRoutes(
+    zoneName: string,
+    patterns: string[],
+    script: string
+  ): Promise<Array<{ pattern: string; status: 'created' | 'exists' | 'reassigned' | 'failed'; error?: string }>> {
+    const results: Array<{ pattern: string; status: 'created' | 'exists' | 'reassigned' | 'failed'; error?: string }> = [];
+
+    const zone = await this.getZoneByName(zoneName);
+    if (!zone) {
+      return patterns.map(pattern => ({
+        pattern,
+        status: 'failed' as const,
+        error: `Zone "${zoneName}" not found or not readable by this token`,
+      }));
+    }
+
+    let existing: Array<{ id: string; pattern: string; script: string }> = [];
+    try {
+      existing = await this.listWorkerRoutes(zone.id);
+    } catch (error) {
+      return patterns.map(pattern => ({
+        pattern,
+        status: 'failed' as const,
+        error: `Cannot read worker routes — the API token needs zone-level Workers Routes access (account-owned tokens can't grant it). ${String(error)}`,
+      }));
+    }
+
+    for (const pattern of patterns) {
+      const match = existing.find(r => r.pattern === pattern);
+      if (match?.script === script) {
+        results.push({ pattern, status: 'exists' });
+        continue;
+      }
+      try {
+        if (match) {
+          await this.put(`/zones/${zone.id}/workers/routes/${match.id}`, { pattern, script });
+          results.push({ pattern, status: 'reassigned' });
+        } else {
+          await this.createWorkerRoute(zone.id, pattern, script);
+          results.push({ pattern, status: 'created' });
+        }
+      } catch (error) {
+        results.push({ pattern, status: 'failed', error: String(error) });
+      }
+    }
+
+    return results;
+  }
+
   async getWorkerSubdomain(): Promise<{ subdomain: string } | null> {
     try {
       return await this.get<{ subdomain: string }>(
