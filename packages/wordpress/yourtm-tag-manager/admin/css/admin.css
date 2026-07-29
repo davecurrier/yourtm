@@ -1,0 +1,55 @@
+/**
+ * YourTM Tag Manager — admin styles.
+ *
+ * The settings screen uses core WordPress markup (.wrap, .form-table,
+ * .widefat, .button), so it inherits admin styling, colour schemes, RTL and
+ * accessibility automatically. Only the two things core has no primitive for
+ * are styled here: the connection status dot and the inline AJAX messages.
+ *
+ * This replaced a ~700-line bespoke dark theme that re-skinned the whole
+ * settings screen (and escaped the admin container with a negative margin).
+ */
+
+.yourtm-status {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 1em 0;
+}
+
+.yourtm-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	flex: 0 0 auto;
+	background: #dcdcde;
+}
+
+.yourtm-dot-connected {
+	background: #00a32a;
+}
+
+.yourtm-dot-pending {
+	background: #dba617;
+}
+
+.yourtm-dot-error {
+	background: #d63638;
+}
+
+/* Inline result text beside the Sync / Check Status buttons. */
+.yourtm-message {
+	margin-inline-start: 8px;
+}
+
+.yourtm-message-success {
+	color: #00a32a;
+}
+
+.yourtm-message-error {
+	color: #d63638;
+}
+
+.yourtm-message-info {
+	color: #646970;
+}
