@@ -164,6 +164,10 @@ struct AssetDetailView: View {
     @State private var consentSel: [String] = []
     @State private var patternsText: String = ""
     @State private var valueText: String = ""
+    @State private var typeText: String = ""
+    @State private var eventText: String = ""
+    @State private var selectorText: String = ""
+    @State private var keyText: String = ""
     @State private var saving = false
     @State private var loaded = false
     @State private var showAI = false
@@ -178,6 +182,10 @@ struct AssetDetailView: View {
             || consentSel != asset.consent
             || patternsText != asset.patterns.joined(separator: ", ")
             || valueText != (asset.value ?? "")
+            || typeText != (asset.type ?? "")
+            || eventText != (asset.event ?? "")
+            || selectorText != (asset.selector ?? "")
+            || keyText != (asset.key ?? "")
     }
 
     private var hasCode: Bool { asset.code != nil || kind == .tags }
@@ -227,22 +235,30 @@ struct AssetDetailView: View {
         consentSel = asset.consent
         patternsText = asset.patterns.joined(separator: ", ")
         valueText = asset.value ?? ""
+        typeText = asset.type ?? ""
+        eventText = asset.event ?? ""
+        selectorText = asset.selector ?? ""
+        keyText = asset.key ?? ""
+    }
+
+    /// Source file shown beside the title. Derived when the engine omits
+    /// sourcePath, which it does for every kind except tags.
+    private var sourceLabel: String {
+        asset.sourcePath ?? "yourtm/\(kind.rawValue)/\(asset.id).ts"
     }
 
     private var metadataForm: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(asset.name).font(.title2).bold()
-                if let type = asset.type {
-                    Text(type)
-                        .font(.caption)
-                        .padding(.horizontal, 8).padding(.vertical, 2)
-                        .background(.quaternary, in: Capsule())
-                }
+                // Editable: `name` is a standard property for every kind, and
+                // its @State was previously never bound to a control, so
+                // hasChanges compared against a value that could never change.
+                TextField("", text: $name)
+                    .textFieldStyle(.plain)
+                    .font(.title2.bold())
+                    .frame(maxWidth: 320)
                 Spacer()
-                if let path = asset.sourcePath {
-                    Text(path).font(.caption.monospaced()).foregroundStyle(.secondary)
-                }
+                Text(sourceLabel).font(.caption.monospaced()).foregroundStyle(.secondary)
             }
 
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {
@@ -284,29 +300,63 @@ struct AssetDetailView: View {
                             .textFieldStyle(.roundedBorder)
                     }
                 }
-                if kind == .variables, asset.value != nil {
+                if kind == .variables {
                     GridRow {
                         fieldLabel("Value")
                         TextField("", text: $valueText)
                             .textFieldStyle(.roundedBorder)
                     }
                 }
-                if kind == .variables, let key = asset.key {
+                if kind == .triggers {
                     GridRow {
-                        fieldLabel("DataLayer Key")
-                        Text(key).font(.body.monospaced())
+                        fieldLabel("Type")
+                        Picker("", selection: $typeText) {
+                            ForEach(PickOptions.triggerTypes, id: \.self) { Text($0).tag($0) }
+                            if !PickOptions.triggerTypes.contains(typeText) {
+                                Text(typeText.isEmpty ? "—" : typeText).tag(typeText)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 200)
                     }
-                }
-                if kind == .triggers, let event = asset.event {
                     GridRow {
                         fieldLabel("Event")
-                        Text(event).font(.body.monospaced())
+                        TextField("custom event name", text: $eventText)
+                            .textFieldStyle(.roundedBorder)
                     }
-                }
-                if kind == .triggers, let selector = asset.selector {
                     GridRow {
                         fieldLabel("Selector")
-                        Text(selector).font(.body.monospaced())
+                        TextField("CSS selector", text: $selectorText)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+                if kind == .variables {
+                    GridRow {
+                        fieldLabel("Type")
+                        Picker("", selection: $typeText) {
+                            ForEach(PickOptions.variableTypes, id: \.self) { Text($0).tag($0) }
+                            if !PickOptions.variableTypes.contains(typeText) {
+                                Text(typeText.isEmpty ? "—" : typeText).tag(typeText)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 200)
+                    }
+                    GridRow {
+                        fieldLabel("DataLayer Key")
+                        TextField("dataLayer key", text: $keyText)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+                // `conditions` is a nested object, not a scalar — shown for
+                // context rather than edited inline. Use "Edit in …" for it.
+                if let conditions = asset.extra["conditions"] {
+                    GridRow {
+                        fieldLabel("Conditions")
+                        Text(conditions.displayString)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
                     }
                 }
             }
@@ -454,6 +504,11 @@ struct AssetDetailView: View {
                 .filter { !$0.isEmpty }
         }
         if valueText != (asset.value ?? "") { updates["value"] = valueText }
+        if name != asset.name { updates["name"] = name }
+        if typeText != (asset.type ?? "") { updates["type"] = typeText }
+        if eventText != (asset.event ?? "") { updates["event"] = eventText }
+        if selectorText != (asset.selector ?? "") { updates["selector"] = selectorText }
+        if keyText != (asset.key ?? "") { updates["key"] = keyText }
 
         guard !updates.isEmpty else { return }
         _ = await state.saveAsset(kind: kind, id: asset.id, updates: updates)

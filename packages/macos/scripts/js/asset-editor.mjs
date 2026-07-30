@@ -28,10 +28,23 @@ const DEFINE_FN = {
   zones: 'defineZone',
 };
 
+/**
+ * Properties that stay at the top level of the define*() object. Anything else
+ * is nested under `config`/`settings`.
+ *
+ * `conditions` is added to triggers and zones, which the engine's list omits.
+ * It is top-level in 13 of 19 triggers and 1 of 2 zones in the reference
+ * container, so without it here an edit would move a live property into
+ * `config`, changing the asset's shape while looking like a successful save.
+ * (Note the drift it reflects: TriggerDefinition in @yourtm/core declares
+ * `config`/`condition`/`extract` and no `conditions`, `event` or `selector` —
+ * the sources the GTM importer produced and the core types disagree. Reconciling
+ * that is separate work; this list follows the sources, which are what ships.)
+ */
 const STANDARD_PROPS = {
   tags: ['name', 'description', 'triggers', 'blocking', 'zones', 'consent', 'priority', 'status', 'vendor', 'code'],
-  triggers: ['name', 'description', 'type', 'priority', 'enabled', 'event', 'selector'],
-  zones: ['name', 'description', 'patterns', 'priority', 'enabled'],
+  triggers: ['name', 'description', 'type', 'priority', 'enabled', 'event', 'selector', 'conditions'],
+  zones: ['name', 'description', 'patterns', 'priority', 'enabled', 'conditions'],
   variables: ['name', 'description', 'type', 'default', 'format', 'value', 'key', 'code'],
 };
 

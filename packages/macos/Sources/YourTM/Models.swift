@@ -33,14 +33,20 @@ enum JSONValue: Codable, Hashable {
         }
     }
 
+    /// Compact human-readable form. Renders nested arrays and objects rather
+    /// than eliding them, so a trigger's `conditions` and an asset's extra
+    /// properties are legible without opening the file.
     var displayString: String {
         switch self {
         case .string(let s): return s
         case .number(let n): return n == n.rounded() ? String(Int(n)) : String(n)
         case .bool(let b): return b ? "true" : "false"
-        case .array(let a): return a.map(\.displayString).joined(separator: ", ")
-        case .object: return "{…}"
         case .null: return ""
+        case .array(let a): return "[" + a.map(\.displayString).joined(separator: ", ") + "]"
+        case .object(let o):
+            return "{" + o.sorted { $0.key < $1.key }
+                .map { "\($0.key): \($0.value.displayString)" }
+                .joined(separator: ", ") + "}"
         }
     }
 }

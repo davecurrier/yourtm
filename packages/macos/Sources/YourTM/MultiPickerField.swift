@@ -213,6 +213,14 @@ enum PickOptions {
             .map { PickOption(name: $0.name, subtitle: $0.description) }
     }
 
+    /// Trigger and variable `type` values. Sourced from what the reference
+    /// container actually uses — the core TriggerDefinition/VariableDefinition
+    /// types have drifted from the files the GTM importer produces, so the
+    /// files are the authority here. An unrecognised value is preserved rather
+    /// than silently coerced.
+    static let triggerTypes = ["pageview", "click", "customEvent", "formSubmit", "init"]
+    static let variableTypes = ["datalayer", "javascript", "constant"]
+
     static let consent: [PickOption] = [
         PickOption(name: "necessary", subtitle: "Always allowed — essential functionality"),
         PickOption(name: "analytics", subtitle: "Measurement and statistics"),
