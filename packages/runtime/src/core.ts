@@ -11,7 +11,7 @@ import {
   type TagExecutionTelemetry,
   type ConsentCategory
 } from '@yourtm/core';
-import { getConsent, hasConsent, type ConsentState } from './consent';
+import { getConsent, hasConsent, onConsentChange, type ConsentState } from './consent';
 import { resolveVariable } from './variables';
 
 // Types
@@ -46,6 +46,13 @@ export interface RuntimeConfig {
   previewMode?: boolean;
   previewEndpoint?: string;
   debug?: boolean;
+  /**
+   * Trigger and variable definitions inlined by the compiler. The generated
+   * entry point has always passed these; they were simply never declared, so
+   * anything reading them had to cast.
+   */
+  triggers?: Array<{ id?: string; name?: string; type?: string }>;
+  variables?: Array<Record<string, unknown>>;
 }
 
 // Runtime state
@@ -171,7 +178,12 @@ export async function executeTag(
   if (!tag) return null;
 
   // Check consent
-  if (tag.consent?.length && !tag.consent.every(hasConsent)) {
+  if (tag.consent?.length && !hasAllConsent(tag.consent)) {
+    // Remember it so a later consent grant can run it. Without this a tag
+    // blocked at page load stayed blocked forever, even after the visitor
+    // accepted — acceptAll() had no effect on anything already evaluated.
+    if (isReplayable(triggerId)) deferred.set(`${tagId}::${triggerId}`, { tagId, triggerId });
+
     const t = {
       ...createBaseEvent(TelemetryEventType.TagExecution),
       tagId,
@@ -240,6 +252,61 @@ export async function executeTag(
 /**
  * Execute all tags for a trigger
  */
+/**
+ * Are all of a tag's required categories granted?
+ *
+ * The cast is unavoidable today: ConsentCategory is declared both in
+ * @yourtm/core (which types TagConfig.consent) and in runtime/src/consent.ts
+ * (which types hasConsent), so the two are structurally identical but
+ * nominally distinct. Centralising it here keeps the workaround in one place
+ * rather than at each call site.
+ */
+function hasAllConsent(cats: readonly unknown[] | undefined): boolean {
+  return (cats ?? []).every(c => hasConsent(c as Parameters<typeof hasConsent>[0]));
+}
+
+/**
+ * Tags blocked awaiting consent, keyed by tagId::triggerId so a tag can never
+ * be replayed twice for the same trigger.
+ */
+const deferred = new Map<string, { tagId: string; triggerId: string }>();
+const alreadyReplayed = new Set<string>();
+
+/**
+ * Whether a trigger still means something once consent arrives seconds later.
+ *
+ * Page-scoped triggers do: the page is still the page. Interaction-scoped ones
+ * do not — the click happened before the visitor reached the consent banner,
+ * the element is long gone, and firing "form submitted" now would report an
+ * event that is not happening. GTM drops these for the same reason.
+ */
+function isReplayable(triggerId: string): boolean {
+  const t = (cfg?.triggers ?? []).find(x => x.id === triggerId || x.name === triggerId);
+  const type = t?.type ?? 'pageview';
+  return type === 'pageview' || type === 'domReady' || type === 'windowLoad'
+      || type === 'init' || type === 'custom';
+}
+
+/**
+ * Re-run tags that were blocked, once their categories are granted.
+ *
+ * Subscribed once at init. onConsentChange already existed and was exported but
+ * nothing listened to it, which is why consent granted after load did nothing.
+ */
+export function initConsentReplay(): void {
+  onConsentChange(() => {
+    for (const [key, entry] of Array.from(deferred)) {
+      const tag = tags.get(entry.tagId);
+      if (!tag) { deferred.delete(key); continue; }
+      if (!hasAllConsent(tag.consent)) continue;   // still not permitted
+      if (alreadyReplayed.has(key)) { deferred.delete(key); continue; }
+      alreadyReplayed.add(key);
+      deferred.delete(key);
+      void executeTag(entry.tagId, {}, entry.triggerId);
+    }
+  });
+}
+
 export async function executeTrigger(
   triggerId: string,
   ctx: Partial<TagContext> = {}

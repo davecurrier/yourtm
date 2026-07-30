@@ -111,7 +111,11 @@ export function initYourTM(config: YourTMConfig): void {
     environment: config.environment || Environment.Production,
     previewMode: config.previewMode,
     previewEndpoint: config.previewEndpoint,
-    debug: config.debug
+    debug: config.debug,
+    // Needed so executeTag can tell a page-scoped trigger from an
+    // interaction-scoped one when deciding what may be replayed after consent.
+    triggers: config.triggers,
+    variables: config.variables as Array<Record<string, unknown>> | undefined
   });
 
   // Initialize consent
@@ -141,6 +145,10 @@ export function initYourTM(config: YourTMConfig): void {
   if (config.triggers) {
     triggers.initTriggers(config.triggers);
   }
+
+  // Replay consent-blocked tags when the visitor later accepts. Registered
+  // after triggers so the registry is populated before any change can arrive.
+  core.initConsentReplay();
 
   // Dispatch ready event
   if (typeof CustomEvent !== 'undefined') {
