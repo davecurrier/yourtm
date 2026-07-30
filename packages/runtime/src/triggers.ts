@@ -118,6 +118,27 @@ function checkConds(conds: TriggerCondition[], ctx: { element?: Element } = {}):
 }
 
 function setupPageview(t: TriggerConfig): () => void {
+  /*
+   * Wait for the document to finish parsing before firing.
+   *
+   * A container ships as several files — core.js plus one bundle per zone —
+   * and only core.js contains the runtime. The zone bundles register their
+   * tags afterwards via window.YourTM.registerTag. `setTimeout(…, 0)` runs at
+   * the end of the current task, which is *before* the next <script> tag
+   * executes, so the pageview trigger fired against an empty registry and no
+   * tag ever ran. Measured on the reference container: 0 tag executions when
+   * loaded as separate scripts, 9 when concatenated into one.
+   *
+   * DOMContentLoaded is the right barrier: it fires after every
+   * parser-inserted script, classic or deferred, has executed. If the runtime
+   * itself was injected after that point there is nothing left to wait for, so
+   * fall back to the original behaviour.
+   */
+  if (document.readyState === 'loading') {
+    const onReady = () => fire(t);
+    document.addEventListener('DOMContentLoaded', onReady, { once: true });
+    return () => document.removeEventListener('DOMContentLoaded', onReady);
+  }
   const id = setTimeout(() => fire(t), 0);
   return () => clearTimeout(id);
 }
