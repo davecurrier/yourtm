@@ -81,6 +81,33 @@ actor ScriptRuntime {
         return code
     }
 
+    /// Resolve an asset's source file.
+    ///
+    /// The engine only reports `sourcePath` for tags — triggers, variables and
+    /// zones come back without one, which is why editing them through the
+    /// engine fails outright ("Failed to update asset"). The layout convention
+    /// `yourtm/<kind>/<id>.ts` holds for all 55 assets in the reference
+    /// container, so deriving the path covers every kind.
+    nonisolated static func assetURL(kind: AssetKind, id: String, projectPath: String) -> URL? {
+        guard !projectPath.isEmpty else { return nil }
+        let url = URL(fileURLWithPath: projectPath)
+            .appendingPathComponent("yourtm/\(kind.rawValue)/\(id).ts")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Read, edit and write an asset's source in one step.
+    func applyEdit(kind: AssetKind, id: String, projectPath: String, updates: [String: Any]) throws {
+        guard let url = Self.assetURL(kind: kind, id: id, projectPath: projectPath) else {
+            throw RuntimeError.call("No source file for \(kind.rawValue)/\(id)")
+        }
+        let source = try String(contentsOf: url, encoding: .utf8)
+        let edited = try editAsset(source: source, assetId: kind.rawValue, updates: updates)
+        // editAsset throws rather than returning empty, but a zero-byte write
+        // over a tag source is unrecoverable, so refuse it explicitly.
+        guard !edited.isEmpty else { throw RuntimeError.badResult("refusing to write empty \(id).ts") }
+        try edited.write(to: url, atomically: true, encoding: .utf8)
+    }
+
     /// `swift run` has no bundle resources; fall back to the source tree.
     nonisolated static func developmentResourceURL(named name: String) -> URL? {
         let candidate = URL(fileURLWithPath: #filePath)

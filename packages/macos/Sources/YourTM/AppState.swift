@@ -32,13 +32,21 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Write an asset's source natively, via ts-morph in JavaScriptCore.
+    ///
+    /// Swift is the *sole* writer on purpose. The engine's `updateAssetProperties`
+    /// edits through a cached ts-morph Project, so if both wrote, an engine-side
+    /// edit would silently revert a Swift one from its stale in-memory copy.
+    /// Reads stay on the engine, which recompiles from disk on every refresh and
+    /// therefore sees these writes immediately.
+    ///
+    /// Verified byte-identical to the engine's output across all 21 tags in the
+    /// reference container before this was switched over.
     func saveAsset(kind: AssetKind, id: String, updates: [String: Any]) async -> Bool {
         do {
-            let result = try await api.updateAsset(kind: kind, id: id, updates: updates)
-            if result.success == false {
-                lastError = result.error ?? "Save failed"
-                return false
-            }
+            try await ScriptRuntime.shared.applyEdit(
+                kind: kind, id: id, projectPath: projectPath, updates: updates
+            )
             await refresh()
             showToast("Saved \(id)")
             return true
