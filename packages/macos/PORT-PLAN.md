@@ -4,9 +4,23 @@ Working plan for making YourTM.app self-sufficient: no Node, no `next dev`, no
 `localhost:3344`. Written 2026-07-29 to be picked up in later sessions with no
 prior context.
 
-**Status: not started.** Feasibility is proven and two components exist, but
-zero processing has moved to Swift. See *Current state* below before assuming
-otherwise.
+**Status: in progress.** Reading and editing are native; building is half done.
+Last updated 2026-07-30.
+
+| Phase | State |
+|---|---|
+| 1 — asset editing off Node | **done** — Swift is the sole writer |
+| 2 — compiler | **read done, core bundle done**; zone + default bundles remain |
+| 3 — read-only / file routes | settings done; the rest remain |
+| 4 — Cloudflare + deploy | not started |
+| 5 — WordPress + telemetry | not started |
+| 5b — document packages | not started (demoted, see §1) |
+| 6 — delete the engine | blocked on 3–5 |
+| 7 — hosted container | not started (the actual goal, §6b) |
+
+Proven on 2026-07-30: settings and all 55 assets load with the engine stopped
+and `node` removed from `PATH`. The engine is still required for building,
+deploying, WordPress and telemetry.
 
 ---
 
@@ -70,7 +84,18 @@ volume plus two genuinely risky pieces (§5).
 
 ## 3. Current state
 
-Already built and committed (`f463d66`):
+Native components now in the app and **in use**:
+
+| File | Role | Wired in at |
+|---|---|---|
+| `ScriptRuntime.swift` | ts-morph in JavaScriptCore; writes asset sources | `AppState.saveAsset` |
+| `NativeProjectReader.swift` | esbuild + JSC; reads the container (95 ms/55 assets) | `AppState.refresh` |
+| `NativeSettings.swift` | reads `~/.yourtm/config.json` | `AppState.refresh` |
+| `NativeCompiler.swift` | drives the bundled esbuild binary | reader, builder |
+| `NativeBuilder.swift` | emits `core.js` | not yet wired — zone bundles missing |
+| `AssetFactory.swift` | writes new asset files | `AssetComposerView` |
+
+Originally built and committed at `f463d66`:
 
 - `Sources/YourTM/NativeCompiler.swift` — drives the bundled esbuild binary.
   Reads both pipes before `waitUntilExit()` so a large bundle cannot deadlock
