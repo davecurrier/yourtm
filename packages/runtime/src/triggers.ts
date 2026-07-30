@@ -64,14 +64,47 @@ export function removeAllTriggers(): void {
 }
 
 async function fire(t: TriggerConfig, ctx: { element?: Element; event?: string } = {}): Promise<void> {
-  if (t.conditions && !checkConds(t.conditions)) return;
+  if (t.conditions && !checkConds(t.conditions, ctx)) return;
   push({ event: `ytm.trigger.${t.id}`, 'ytm.triggerId': t.id, 'ytm.triggerType': t.type });
   await executeTrigger(t.id, ctx);
 }
 
-function checkConds(conds: TriggerCondition[]): boolean {
+/**
+ * Built-in variables a condition may reference.
+ *
+ * Conditions used to resolve through dlGet() alone, which walks the dataLayer
+ * by dot-path. But the GTM importer emits conditions against variable names
+ * like `page-url` and `form-id`, which are built-ins rather than dataLayer
+ * keys — so each resolved to undefined and the trigger silently never fired.
+ * In the reference container that was 13 of 19 triggers.
+ *
+ * Element-scoped built-ins need the event context, which is why checkConds now
+ * receives it.
+ */
+function builtinVar(name: string, ctx: { element?: Element }): unknown {
+  const el = ctx.element as HTMLElement | undefined;
+  switch (name) {
+    case 'page-url': return location.href;
+    case 'page-hostname': return location.hostname;
+    case 'page-path': return location.pathname;
+    case 'referrer': return document.referrer;
+    case 'click-element':
+    case 'form-element': return el;
+    case 'click-classes':
+    case 'form-classes': return el?.className ?? '';
+    case 'click-id':
+    case 'form-id': return el?.id ?? '';
+    case 'click-text': return el?.textContent?.trim().slice(0, 100) ?? '';
+    case 'click-url': return (el?.closest('a') as HTMLAnchorElement | null)?.href ?? '';
+    default: return undefined;
+  }
+}
+
+function checkConds(conds: TriggerCondition[], ctx: { element?: Element } = {}): boolean {
   for (const c of conds) {
-    const v = dlGet(c.variable);
+    // Built-ins win; anything else stays a dataLayer path, as before.
+    const builtin = builtinVar(c.variable, ctx);
+    const v = builtin !== undefined ? builtin : dlGet(c.variable);
     switch (c.operator) {
       case 'equals': if (v !== c.value) return false; break;
       case 'contains': if (typeof v !== 'string' || !v.includes(String(c.value))) return false; break;
