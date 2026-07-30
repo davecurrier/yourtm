@@ -45,10 +45,16 @@ struct NativeCompiler {
     /// browser — so callers must not treat this as a finished container build
     /// until that post-processing is ported across.
     ///
-    /// - Parameter externals: module specifiers to leave unresolved.
+    /// - Parameters:
+    ///   - externals: module specifiers to leave unresolved.
+    ///   - alias: module specifier -> file path. Preferred over `externals` for
+    ///     the `@yourtm/*` packages: aliasing to a stub lets esbuild resolve
+    ///     them normally, where marking them external leaves a `require` shim
+    ///     that throws in a browser and forces the caller into text surgery.
     func bundle(
         entry: URL,
         externals: [String] = [],
+        alias: [String: String] = [:],
         minify: Bool = true
     ) async throws -> Result {
         guard let binary = Self.binaryURL else { throw CompileError.binaryMissing }
@@ -56,6 +62,7 @@ struct NativeCompiler {
         var args = [entry.path, "--bundle", "--format=iife", "--log-level=warning"]
         if minify { args.append("--minify") }
         args.append(contentsOf: externals.map { "--external:\($0)" })
+        args.append(contentsOf: alias.sorted { $0.key < $1.key }.map { "--alias:\($0.key)=\($0.value)" })
 
         let process = Process()
         process.executableURL = binary

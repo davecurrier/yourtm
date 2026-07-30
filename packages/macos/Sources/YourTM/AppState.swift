@@ -18,17 +18,41 @@ final class AppState: ObservableObject {
         !(settings.cloudflare?.accountId ?? "").isEmpty && !(settings.cloudflare?.apiToken ?? "").isEmpty
     }
 
+    /// Reload settings and the container.
+    ///
+    /// Settings still come from the engine; the container is read natively —
+    /// esbuild bundles the sources and JavaScriptCore evaluates them, taking
+    /// the app's primary data path off Node. Verified against the engine on the
+    /// reference container: every field the engine reports is identical, and
+    /// native additionally reports `sourcePath` for triggers, variables and
+    /// zones, which the engine omits.
+    ///
+    /// The engine remains a fallback while the port is in progress, so a
+    /// regression in the native reader degrades rather than blanks the app. The
+    /// failure is surfaced, not swallowed.
     func refresh() async {
         isLoading = true
         defer { isLoading = false }
+
+        // Settings must land first: the project path comes from them, and on a
+        // cold launch it is still empty. Reading concurrently would send "" to
+        // the reader and fall back to the engine on every first refresh.
+        if let s = NativeSettings.load() {
+            settings = s
+        } else if let s = try? await api.settings() {
+            settings = s
+        }
+
         do {
-            async let p = api.project()
-            async let s = api.settings()
-            project = try await p
-            settings = try await s
+            project = try await NativeProjectReader.read(projectPath: projectPath)
             lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            if let fallback = try? await api.project() {
+                project = fallback
+                lastError = "Native read failed, using the engine: \(error.localizedDescription)"
+            } else {
+                lastError = error.localizedDescription
+            }
         }
     }
 

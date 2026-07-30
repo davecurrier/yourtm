@@ -153,6 +153,8 @@ extension Asset: Codable {
         if !zones.isEmpty { try c.encode(zones, forKey: .init("zones")) }
         if !consent.isEmpty { try c.encode(consent, forKey: .init("consent")) }
         if !patterns.isEmpty { try c.encode(patterns, forKey: .init("patterns")) }
+        // Decoded but previously never encoded, so an Asset did not round-trip.
+        try c.encodeIfPresent(sourcePath, forKey: .init("sourcePath"))
         try c.encodeIfPresent(priority, forKey: .init("priority"))
         try c.encodeIfPresent(value, forKey: .init("value"))
         try c.encodeIfPresent(key, forKey: .init("key"))
