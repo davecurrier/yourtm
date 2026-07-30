@@ -168,6 +168,7 @@ struct AssetDetailView: View {
     @State private var eventText: String = ""
     @State private var selectorText: String = ""
     @State private var keyText: String = ""
+    @State private var conditions: [AssetCondition] = []
     @State private var saving = false
     @State private var loaded = false
     @State private var showAI = false
@@ -186,6 +187,7 @@ struct AssetDetailView: View {
             || eventText != (asset.event ?? "")
             || selectorText != (asset.selector ?? "")
             || keyText != (asset.key ?? "")
+            || conditions != AssetCondition.list(from: asset.extra["conditions"])
     }
 
     private var hasCode: Bool { asset.code != nil || kind == .tags }
@@ -239,6 +241,7 @@ struct AssetDetailView: View {
         eventText = asset.event ?? ""
         selectorText = asset.selector ?? ""
         keyText = asset.key ?? ""
+        conditions = AssetCondition.list(from: asset.extra["conditions"])
     }
 
     /// Source file shown beside the title. Derived when the engine omits
@@ -300,7 +303,7 @@ struct AssetDetailView: View {
                             .textFieldStyle(.roundedBorder)
                     }
                 }
-                if kind == .variables {
+                if kind == .variables, typeText == "constant" {
                     GridRow {
                         fieldLabel("Value")
                         TextField("", text: $valueText)
@@ -319,15 +322,22 @@ struct AssetDetailView: View {
                         .labelsHidden()
                         .frame(width: 200)
                     }
-                    GridRow {
-                        fieldLabel("Event")
-                        TextField("custom event name", text: $eventText)
-                            .textFieldStyle(.roundedBorder)
+                    // Only shown where the type gives them meaning: a pageview
+                    // trigger has no event name and no element to select, and
+                    // offering the fields invites writing dead properties.
+                    if typeText == "customEvent" {
+                        GridRow {
+                            fieldLabel("Event")
+                            TextField("dataLayer event name", text: $eventText)
+                                .textFieldStyle(.roundedBorder)
+                        }
                     }
-                    GridRow {
-                        fieldLabel("Selector")
-                        TextField("CSS selector", text: $selectorText)
-                            .textFieldStyle(.roundedBorder)
+                    if typeText == "click" || typeText == "formSubmit" {
+                        GridRow {
+                            fieldLabel("Selector")
+                            TextField("CSS selector", text: $selectorText)
+                                .textFieldStyle(.roundedBorder)
+                        }
                     }
                 }
                 if kind == .variables {
@@ -342,21 +352,20 @@ struct AssetDetailView: View {
                         .labelsHidden()
                         .frame(width: 200)
                     }
-                    GridRow {
-                        fieldLabel("DataLayer Key")
-                        TextField("dataLayer key", text: $keyText)
-                            .textFieldStyle(.roundedBorder)
+                    // A variable's substance depends on its type: datalayer uses
+                    // a key, constant a value, javascript the code editor below.
+                    if typeText == "datalayer" {
+                        GridRow {
+                            fieldLabel("DataLayer Key")
+                            TextField("dataLayer key", text: $keyText)
+                                .textFieldStyle(.roundedBorder)
+                        }
                     }
                 }
-                // `conditions` is a nested object, not a scalar — shown for
-                // context rather than edited inline. Use "Edit in …" for it.
-                if let conditions = asset.extra["conditions"] {
-                    GridRow {
+                if kind == .triggers || kind == .zones {
+                    GridRow(alignment: .top) {
                         fieldLabel("Conditions")
-                        Text(conditions.displayString)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
+                        ConditionsEditor(conditions: $conditions, project: state.project)
                     }
                 }
             }
@@ -396,7 +405,7 @@ struct AssetDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Other Properties").font(.headline)
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
-                ForEach(asset.extra.keys.sorted(), id: \.self) { key in
+                ForEach(asset.extra.keys.sorted().filter { $0 != "conditions" }, id: \.self) { key in
                     GridRow {
                         fieldLabel(key)
                         Text(asset.extra[key]?.displayString ?? "")
@@ -509,6 +518,9 @@ struct AssetDetailView: View {
         if eventText != (asset.event ?? "") { updates["event"] = eventText }
         if selectorText != (asset.selector ?? "") { updates["selector"] = selectorText }
         if keyText != (asset.key ?? "") { updates["key"] = keyText }
+        if conditions != AssetCondition.list(from: asset.extra["conditions"]) {
+            updates["conditions"] = AssetCondition.encode(conditions)
+        }
 
         guard !updates.isEmpty else { return }
         _ = await state.saveAsset(kind: kind, id: asset.id, updates: updates)

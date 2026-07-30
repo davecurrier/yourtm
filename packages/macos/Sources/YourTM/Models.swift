@@ -337,6 +337,67 @@ struct GTMPreview {
     var rawJSON: String
 }
 
+// MARK: - Trigger / zone conditions
+
+/// One firing condition. Mirrors `TriggerCondition` in
+/// `packages/runtime/src/triggers.ts` — the operator set is closed there, so it
+/// is closed here too rather than being free text.
+struct AssetCondition: Identifiable, Hashable {
+    enum Operator: String, CaseIterable, Identifiable {
+        case equals, contains, matches, exists, gt, lt
+        var id: String { rawValue }
+
+        /// `exists` only asks whether the variable is set, so it takes no value.
+        var takesValue: Bool { self != .exists }
+
+        var label: String {
+            switch self {
+            case .equals: return "equals"
+            case .contains: return "contains"
+            case .matches: return "matches regex"
+            case .exists: return "exists"
+            case .gt: return "greater than"
+            case .lt: return "less than"
+            }
+        }
+    }
+
+    var id = UUID()
+    var variable: String = ""
+    var op: Operator = .equals
+    var value: String = ""
+
+    /// Parse the `conditions` array as written by the GTM importer.
+    static func list(from json: JSONValue?) -> [AssetCondition] {
+        guard case .array(let items)? = json else { return [] }
+        return items.compactMap { item in
+            guard case .object(let o) = item else { return nil }
+            var c = AssetCondition()
+            if case .string(let v)? = o["variable"] { c.variable = v }
+            if case .string(let raw)? = o["operator"], let op = Operator(rawValue: raw) { c.op = op }
+            if let v = o["value"] { c.value = v.displayString }
+            return c
+        }
+    }
+
+    /// Serialise back to the array shape the runtime evaluates. Numeric-looking
+    /// values for gt/lt are emitted as numbers, since those operators compare
+    /// numerically and a quoted number would never match.
+    static func encode(_ conditions: [AssetCondition]) -> [[String: Any]] {
+        conditions.filter { !$0.variable.isEmpty }.map { c in
+            var out: [String: Any] = ["variable": c.variable, "operator": c.op.rawValue]
+            if c.op.takesValue {
+                if (c.op == .gt || c.op == .lt), let n = Double(c.value) {
+                    out["value"] = n
+                } else {
+                    out["value"] = c.value
+                }
+            }
+            return out
+        }
+    }
+}
+
 // MARK: - WordPress sites
 
 /// A WordPress install this container publishes to. Mirrors the engine's
