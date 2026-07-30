@@ -12,6 +12,33 @@ struct TagDraft: Codable, Equatable {
     static let empty = TagDraft(name: "", description: "", code: "", triggers: [], zones: [], consent: [])
 }
 
+/// Draft of a trigger, variable or zone. One shape covers all three — the
+/// composer shows only the fields the chosen kind and type actually use, and
+/// `AssetFactory` writes only those.
+struct AssetDraft: Codable, Equatable {
+    var name: String = ""
+    var description: String = ""
+    var type: String = ""
+    var key: String = ""
+    var value: String = ""
+    var code: String = ""
+    var patterns: [String] = []
+    var conditions: [DraftCondition] = []
+
+    struct DraftCondition: Codable, Equatable {
+        var variable: String = ""
+        var op: String = "equals"
+        var value: String = ""
+
+        enum CodingKeys: String, CodingKey {
+            case variable, value
+            case op = "operator"
+        }
+    }
+
+    static let empty = AssetDraft()
+}
+
 /// AI client for tag code generation/modification. Raw HTTP (no Swift SDK).
 /// Routes by key: Anthropic (claude-opus-5) when an sk-ant key is set,
 /// otherwise OpenAI. Anthropic is preferred when both exist.
@@ -144,6 +171,137 @@ struct AIService {
         "required": ["name", "description", "code", "triggers", "zones", "consent"],
         "additionalProperties": false,
     ] as [String: Any]
+
+    private static func assetSchema(for kind: AssetKind) -> [String: Any] {
+        var properties: [String: Any] = [
+            "name": ["type": "string"],
+            "description": ["type": "string"],
+        ]
+        var required = ["name", "description"]
+
+        switch kind {
+        case .triggers:
+            properties["type"] = ["type": "string", "enum": PickOptions.triggerTypes]
+            properties["conditions"] = [
+                "type": "array",
+                "items": [
+                    "type": "object",
+                    "properties": [
+                        "variable": ["type": "string"],
+                        "operator": ["type": "string",
+                                     "enum": AssetCondition.Operator.allCases.map(\.rawValue)],
+                        "value": ["type": "string"],
+                    ],
+                    "required": ["variable", "operator", "value"],
+                    "additionalProperties": false,
+                ],
+            ]
+            required += ["type", "conditions"]
+        case .variables:
+            properties["type"] = ["type": "string", "enum": PickOptions.variableTypes]
+            properties["key"] = ["type": "string"]
+            properties["value"] = ["type": "string"]
+            properties["code"] = ["type": "string"]
+            required += ["type", "key", "value", "code"]
+        case .zones:
+            properties["patterns"] = ["type": "array", "items": ["type": "string"]]
+            required.append("patterns")
+        case .tags:
+            break
+        }
+
+        return [
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": false,
+        ]
+    }
+
+    private static func assetSystemPrompt(for kind: AssetKind) -> String {
+        let common = """
+        You configure assets for YourTM, a tag manager. Reply with JSON only, matching the schema.
+        `name` must be lower-case kebab-case and describe the asset's purpose.
+        Preserve any values already set in the current draft unless the request asks to change them.
+        """
+        switch kind {
+        case .triggers:
+            return common + """
+
+            A trigger decides WHEN tags fire. `type` is the browser event that starts it.
+            `conditions` narrow it further and ALL must match. Each condition names a
+            variable, an operator, and a value. Prefer the built-in variables
+            page-url, page-path, page-hostname and referrer for URL matching, and
+            form-id / form-classes / click-classes / click-id / click-text / click-url
+            for element matching — the element ones only resolve during a click or form
+            submit, so do not use them with a pageview trigger. Use `contains` for URL
+            fragments and `matches` only for genuine regular expressions. The `exists`
+            operator takes no value; send an empty string for it.
+            """
+        case .variables:
+            return common + """
+
+            A variable supplies a value to tags. Choose exactly one type:
+            `datalayer` reads dataLayer — set `key` and leave value/code empty.
+            `constant` is a fixed value — set `value` and leave key/code empty.
+            `javascript` computes a value — set `code` to a function body that returns
+            the value, and leave key/value empty.
+            """
+        case .zones:
+            return common + """
+
+            A zone is a group of pages, defined by URL `patterns` such as /blog/* or
+            /checkout. Patterns support a trailing * wildcard.
+            """
+        case .tags:
+            return common
+        }
+    }
+
+    /// Produce or refine a trigger, variable or zone from a natural-language request.
+    func generateAssetDraft(
+        kind: AssetKind,
+        request: String,
+        draft: AssetDraft,
+        variables: [String],
+        existingNames: [String]
+    ) async throws -> AssetDraft {
+        let draftJSON = (try? String(data: JSONEncoder().encode(draft), encoding: .utf8)) ?? "{}"
+        let context = """
+        Container variables available: \(variables.joined(separator: ", "))
+        Existing \(kind.rawValue) (do not reuse these names): \(existingNames.joined(separator: ", "))
+
+        Current draft:
+        \(draftJSON)
+
+        Request: \(request)
+        """
+
+        let system = Self.assetSystemPrompt(for: kind)
+        let schema = Self.assetSchema(for: kind)
+
+        let text: String
+        if anthropicKey.hasPrefix("sk-ant") {
+            text = try await callClaude(context, system: system, schema: schema)
+        } else if !openaiKey.isEmpty {
+            text = try await callOpenAI(context, system: system, schema: schema)
+        } else if anthropicKey.isEmpty {
+            throw AIError.noKey
+        } else {
+            throw AIError.badKey(String(anthropicKey.prefix(10)))
+        }
+
+        let json = Self.stripFences(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = json.data(using: .utf8),
+              var result = try? JSONDecoder().decode(AssetDraft.self, from: data) else {
+            throw AIError.empty
+        }
+        result.name = result.name
+            .lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return result
+    }
 
     /// Produce or refine a complete tag draft from a natural-language request.
     func generateTagDraft(

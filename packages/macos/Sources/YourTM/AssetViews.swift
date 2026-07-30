@@ -9,7 +9,6 @@ struct AssetListView: View {
     @State private var selectedId: String?
     @State private var composing = false
     @State private var pendingDelete: Asset?
-    @State private var creating = false
 
     private var assets: [Asset] {
         let all = state.project.assets(kind).sorted { $0.name < $1.name }
@@ -47,6 +46,15 @@ struct AssetListView: View {
                         },
                         onCancel: { composing = false }
                     )
+                } else if composing {
+                    AssetComposerView(
+                        kind: kind,
+                        onCreated: { newId in
+                            composing = false
+                            selectedId = newId
+                        },
+                        onCancel: { composing = false }
+                    )
                 } else if let id = selectedId, let asset = assets.first(where: { $0.id == id }) {
                     AssetDetailView(kind: kind, asset: asset, onRequestDelete: { pendingDelete = asset })
                         .id(id) // reset editor state when switching assets
@@ -63,12 +71,8 @@ struct AssetListView: View {
         .navigationTitle(kind.title)
         .toolbar {
             Button {
-                if kind == .tags {
-                    selectedId = nil
-                    composing = true
-                } else {
-                    creating = true
-                }
+                selectedId = nil
+                composing = true
             } label: {
                 Label("New \(kind.singular)", systemImage: "plus")
             }
@@ -84,17 +88,6 @@ struct AssetListView: View {
         .onChange(of: selectedId) { _, newValue in
             // Picking a tag from the list exits composer mode
             if newValue != nil { composing = false }
-        }
-        .sheet(isPresented: $creating) {
-            NewAssetView(
-                kind: kind,
-                onCreated: { newId in
-                    creating = false
-                    selectedId = newId
-                },
-                onCancel: { creating = false }
-            )
-            .environmentObject(state)
         }
         .sheet(item: $pendingDelete) { asset in
             DeleteConfirmView(asset: asset, kind: kind) {
