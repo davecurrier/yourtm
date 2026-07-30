@@ -407,6 +407,45 @@ So the deployed `worker.js` is **hand-maintained**, not generated from
    the port's subject and the worker as a production artifact that happens to be
    ahead of it.
 
+### 9b. What dev.vitaldesign.com actually serves (measured 2026-07-30)
+
+The page loads exactly one script:
+
+```
+/wp-content/uploads/yourtm-bundles/YTM-VITAL/core.js?ver=563c74762298   async
+```
+
+That file is **byte-identical to `dist/ytm/core.min.js`**, dated March, and
+contains `window.YTM=` with no `window.YourTM`, `registerTag` or `initYourTM`.
+It is the hand-written single-file runtime, not compiler output. There are no
+zone bundles deployed, which is why `async` is safe there.
+
+So the compiled multi-bundle path has **never run in production**, on this site
+or anywhere. That is consistent with it having been broken until the
+DOMContentLoaded fix.
+
+**The plugin's local-bundle path itself is sound.** Simulating its exact enqueue
+shapes against freshly compiled bundles:
+
+| plugin strategy | result |
+|---|---|
+| `defer` (forced whenever zone files exist) | 9 executions, 3 vendors |
+| `blocking` | 9 executions, 3 vendors |
+| `async` | **0 executions**, `TypeError: … reading 'registerTag'` |
+
+The async failure is why `get_effective_loading_strategy()` coerces async to
+defer once zone files are present — that coercion is load-bearing, not cosmetic.
+
+**What blocks switching production to compiled output is the source drift, not
+the plugin.** Deploying today would mean:
+
+- **lost (3):** `ga4-debug`, `ga4-ss`, `linkedin-setup`
+- **gained (1):** `ga4-server-side`
+
+`linkedin-setup` is the LinkedIn Insight base tag, so this is a real marketing
+regression, not a cosmetic one. Reconcile §9 before deploying compiled bundles
+to any live site.
+
 ## 10. Regression baseline
 
 Capture before changing anything, so "unchanged" is provable rather than assumed:
