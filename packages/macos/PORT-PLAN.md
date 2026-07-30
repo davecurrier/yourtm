@@ -10,15 +10,46 @@ otherwise.
 
 ---
 
-## 1. Goal
+## 1. Goal — distribution, not tidiness
 
-The Mac app spawns `next dev` on :3344 (`BackendManager.swift`) and routes every
-action through it — loading the project, editing tags, building, deploying,
-publishing to WordPress. `AppState.refresh()` calls `api.project()` and
-`api.settings()` as its first act, so with the engine down the app shows nothing.
+The real driver: **Dave needs to hand the app to his team and have them edit the
+container.** Today that is impossible, and not because of file layout.
 
-Target end state: the app does all of it natively, `packages/desktop` is deleted,
-and Node is not required to run YourTM.
+`BackendManager.swift` shells out to `node` and launches `next dev` from
+`node_modules`. Handing someone `YourTM.app` alone fails at launch. A working
+install needs:
+
+| | |
+|---|---|
+| `YourTM.app` | 28 MB |
+| engine source (`desktop/src`) | 620 KB |
+| `node_modules` | **1.1 GB** |
+| Node installed on their Mac | required |
+
+So the port is what makes the app *distributable at all* — afterwards it is one
+signed ~28 MB bundle, drag-and-drop installable, no Node.
+
+**Distribution alone is not enough, and embedding the container is the wrong
+answer to the rest.** If container sources live inside the `.app`, sending the
+app sends a frozen snapshot: the recipient's edits land in their copy, yours in
+yours, two containers diverging with no way to merge. A self-contained *app* is
+correct; a self-contained *app + container* is a single-player product.
+
+Target end state, in order:
+
+1. **Installable** — native Swift, no Node, no `packages/desktop`. §6 below.
+2. **Shareable** — the container is hosted; a teammate installs the app, signs
+   in, and edits the shared container without ever touching a file. §7.
+3. Team features (roles, approvals, version history) on top of 2 — these are
+   already specified in `CLAUDE.md` §6 and §8, and none of them are achievable
+   while the container is a folder on one laptop.
+
+Interim, and it works today: `projects/vital-tag` is already a git repo, so a
+developer teammate can clone it and point the app at their clone. That covers
+developers, not marketers, and needs no new work.
+
+Note this demotes the document-package idea (§5b): if the container is hosted,
+packaging a local folder is cosmetic. Keep it, but it is no longer load-bearing.
 
 ## 2. Verified facts — do not re-spike these
 
@@ -215,6 +246,38 @@ compiling from the directory form.
 ### Phase 6 — delete the engine
 Remove `BackendManager`'s spawn path, delete `packages/desktop`, drop `next` from
 the workspace. Confirm the app launches and functions with **no Node on `PATH`**.
+
+## 6b. Phase 7 — hosted container (the actual goal)
+
+Everything above only makes the app *installable*. This is what makes it
+*shareable*, which is the requirement that started the work (§1).
+
+Shape: **app = client, container = remote.** The teammate installs one bundle,
+signs in, and sees the container. Local files become a working copy, not the
+source of truth.
+
+The infrastructure already exists in this account — no new vendor:
+
+- **R2** — container documents (assets as JSON, plus compiled bundles).
+- **Durable Object** — write-locking and version history. One DO per container
+  serialises writes, which is what stops two editors clobbering each other. The
+  telemetry DO already proves the pattern.
+- **Worker** — the API surface, already deployed and routed.
+
+Work, roughly in order:
+1. Define the container document format and a migration from the file tree.
+2. Worker endpoints: read, write-with-version-check, list versions.
+3. Auth. Cloudflare API tokens are the expedient start; real user accounts are a
+   product decision, not a technical one.
+4. App: sync, conflict surface ("someone else changed this"), offline read.
+5. Export/import to the file tree, so git and `ytm` keep working.
+
+*Verify:* two machines, same container, edits from one visible on the other; a
+stale write is rejected rather than silently winning.
+
+Open: does a hosted container become the only mode, or does local-folder mode
+stay for solo/developer use? Keeping both is more work but is what makes the
+"developer-centric, it's just TypeScript in git" positioning survive.
 
 ## 7. Decisions already made
 
