@@ -154,6 +154,258 @@ enum NativeBuilder {
         return (t, v)
     }
 
+    // MARK: Zone and default bundles
+
+    /// Faithful port of `generateTagsCode()` from the CLI compiler.
+    ///
+    /// Kept in JavaScript rather than Swift on purpose: it has to distinguish a
+    /// function `execute` from a string `code` and call `.toString()` on the
+    /// former, including un-shorthanding ES6 methods (`execute(ctx){}` is not a
+    /// valid expression on its own). Swift cannot see into a JS closure, so
+    /// doing this anywhere else would mean giving up function-bodied tags.
+    private static let tagsCodeGenerator = """
+    const sanitizeId = (id) => String(id).replace(/[-\\s]/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+
+    function fnSource(fn) {
+      let s = fn.toString();
+      if (s.startsWith('async ') && !s.startsWith('async function')) {
+        s = s.replace(/^async\\s+/, 'async function ');
+      } else if (!s.startsWith('function') && !s.startsWith('async') && !s.startsWith('(')) {
+        s = 'function ' + s;
+      }
+      return s;
+    }
+
+    function generateTagsCode(tags, zone) {
+      const tagsJson = tags.map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        type: tag.type,
+        triggers: tag.triggers,
+        priority: tag.priority || 0,
+        consent: tag.consent || [],
+        platform: tag.platform,
+        code: `__TAG_${sanitizeId(tag.id)}__`,
+      }));
+
+      let code = `
+    (function() {
+      'use strict';
+    `;
+
+      tags.forEach((tag) => {
+        const safeId = sanitizeId(tag.id);
+        const executeFunc = tag.execute || tag.code;
+        let tagCode;
+        if (typeof executeFunc === 'function') tagCode = fnSource(executeFunc);
+        else if (typeof executeFunc === 'string') tagCode = `function(context) { ${executeFunc} }`;
+        else tagCode = 'function(context) {}';
+
+        let setupCode = null;
+        if (tag.setup && typeof tag.setup === 'function') setupCode = fnSource(tag.setup);
+
+        code += `
+      function __TAG_${safeId}__(context) {
+        return (${tagCode})(context);
+      }
+    `;
+        if (setupCode) {
+          code += `
+      __TAG_${safeId}__._setup = ${setupCode};
+    `;
+        }
+      });
+
+      code += `
+      var tags = ${JSON.stringify(tagsJson)};
+      tags.forEach(function(tag) {
+        tag.code = eval(tag.code);
+        window.YourTM.registerTag(tag);
+      });
+    `;
+
+      if (zone) {
+        const patterns = zone.patterns || zone.urlPatterns || [];
+        code += `
+      // Zone: ${zone.name}
+      // URL Patterns: ${JSON.stringify(patterns)}
+    `;
+      }
+
+      code += `
+    })();
+    `;
+      return code;
+    }
+    """
+
+    /// Generated sources for every zone bundle plus the orphan-tag bundle,
+    /// keyed by output file name. Produced in one JavaScriptCore pass so tag
+    /// functions are still live objects when their source is captured.
+    private static func bundleSources(projectPath: String) async throws -> [(name: String, source: String)] {
+        let work = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ytm-zones-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: work) }
+
+        let stub = work.appendingPathComponent("yourtm-core-stub.js")
+        try NativeProjectReader.stubSource.write(to: stub, atomically: true, encoding: .utf8)
+
+        var imports: [String] = []
+        var refs: [AssetKind: [String]] = [:]
+        var index = 0
+        for kind in [AssetKind.tags, .zones] {
+            var list: [String] = []
+            for file in NativeProjectReader.assetFiles(projectPath: projectPath, kind: kind) {
+                let alias = "z\(index)"; index += 1
+                imports.append("import * as \(alias) from \(NativeProjectReader.jsString(file.path))")
+                list.append(alias)
+            }
+            refs[kind] = list
+        }
+
+        let entrySource = """
+        \(imports.joined(separator: "\n"))
+
+        const slug = (s) => String(s).toLowerCase()
+          .replace(/\\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
+
+        function collect(mod) {
+          const out = [];
+          const take = (d) => {
+            if (!d || typeof d !== 'object' || (!d.id && !d.name)) return;
+            const c = { ...d };
+            if (!c.id) c.id = slug(c.name);
+            out.push(c);
+          };
+          if (Array.isArray(mod.default)) mod.default.forEach(take);
+          else if (mod.default) take(mod.default);
+          for (const [k, v] of Object.entries(mod)) if (k !== 'default') take(v);
+          return out;
+        }
+
+        \(tagsCodeGenerator)
+
+        const tags  = [\(refs[.tags]!.joined(separator: ", "))].flatMap(collect);
+        const zones = [\(refs[.zones]!.joined(separator: ", "))].flatMap(collect);
+
+        const out = [];
+        const claimed = new Set();
+
+        for (const zone of zones) {
+          // A tag belongs to a zone by id or by name, and a zone may also list
+          // tags explicitly — both routes, as the engine does.
+          const inZone = tags.filter((t) => {
+            const tz = t.zones || [];
+            return tz.includes(zone.id) || tz.includes(zone.name);
+          });
+          for (const tagId of zone.tags || []) {
+            const t = tags.find((x) => x.id === tagId);
+            if (t && !inZone.includes(t)) inZone.push(t);
+          }
+          inZone.forEach((t) => claimed.add(t.id));
+          out.push({ name: `zone-${zone.id}.js`, source: generateTagsCode(inZone, zone) });
+        }
+
+        const orphans = tags.filter((t) => !claimed.has(t.id));
+        if (orphans.length > 0) {
+          out.push({ name: 'tags.js', source: generateTagsCode(orphans) });
+        }
+
+        globalThis.YTM_BUNDLE_SOURCES = JSON.stringify(out);
+        """
+        let entry = work.appendingPathComponent("zones.mjs")
+        try entrySource.write(to: entry, atomically: true, encoding: .utf8)
+
+        let compiled: NativeCompiler.Result
+        do {
+            compiled = try await NativeCompiler().bundle(
+                entry: entry,
+                alias: ["@yourtm/core": stub.path,
+                        "@yourtm/vendors": stub.path,
+                        "@yourtm/runtime": stub.path],
+                minify: false
+            )
+        } catch {
+            throw BuildError.bundle(error.localizedDescription)
+        }
+
+        let ctx = JSContext()!
+        var thrown: String?
+        ctx.exceptionHandler = { _, exc in thrown = exc?.toString() ?? "unknown JS exception" }
+        ctx.evaluateScript(compiled.code)
+        if let thrown { throw BuildError.evaluate(thrown) }
+
+        guard let json = ctx.objectForKeyedSubscript("YTM_BUNDLE_SOURCES")?.toString(),
+              let data = json.data(using: .utf8),
+              let rows = (try? JSONSerialization.jsonObject(with: data)) as? [[String: String]] else {
+            throw BuildError.evaluate("zone sources produced no output")
+        }
+        return rows.compactMap { r in
+            guard let n = r["name"], let s = r["source"] else { return nil }
+            return (name: n, source: s)
+        }
+    }
+
+    /// `outDir` from `yourtm.config.ts`, defaulting to the engine's `dist/ytm`.
+    static func outputDirectory(projectPath: String) -> URL {
+        let configURL = URL(fileURLWithPath: projectPath).appendingPathComponent("yourtm.config.ts")
+        var rel = "dist/ytm"
+        if let text = try? String(contentsOf: configURL, encoding: .utf8),
+           let re = try? NSRegularExpression(pattern: #"outDir:\s*['"]([^'"]+)['"]"#),
+           let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           m.numberOfRanges > 1, let r = Range(m.range(at: 1), in: text) {
+            rel = String(text[r])
+        }
+        return URL(fileURLWithPath: projectPath).appendingPathComponent(rel)
+    }
+
+    /// Build everything and write it to the project's output directory.
+    @discardableResult
+    static func buildAndWrite(
+        projectPath: String, containerId: String, debug: Bool = false, minify: Bool = true
+    ) async throws -> [Bundle] {
+        let bundles = try await buildAll(projectPath: projectPath, containerId: containerId,
+                                         debug: debug, minify: minify)
+        let dir = outputDirectory(projectPath: projectPath)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for b in bundles {
+            try b.code.write(to: dir.appendingPathComponent(b.name), atomically: true, encoding: .utf8)
+        }
+        return bundles
+    }
+
+    /// Build every bundle: core, one per zone, and the orphan-tag bundle.
+    static func buildAll(
+        projectPath: String,
+        containerId: String,
+        debug: Bool = false,
+        minify: Bool = true
+    ) async throws -> [Bundle] {
+        var bundles = [try await buildCore(projectPath: projectPath, containerId: containerId,
+                                           debug: debug, minify: minify)]
+        // core.js keeps its name whether or not it is minified; only the
+        // standalone core.min.js artefact uses the other name.
+        bundles[0].name = "core.js"
+
+        let work = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ytm-zb-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: work) }
+
+        for (name, source) in try await bundleSources(projectPath: projectPath) {
+            // Written as .js: the engine feeds these through esbuild's stdin
+            // with `loader: 'js'`, and they contain no TypeScript.
+            let file = work.appendingPathComponent(name)
+            try source.write(to: file, atomically: true, encoding: .utf8)
+            let result = try await NativeCompiler().bundle(
+                entry: file, target: "es2020", minify: minify
+            )
+            bundles.append(Bundle(name: name, code: result.code))
+        }
+        return bundles
+    }
+
     // MARK: Core bundle
 
     /// Build `core.js` — the runtime plus this container's triggers and variables.

@@ -208,8 +208,35 @@ order, so the engine's builds are not reproducible across machines; sorting
 makes them so. Triggers are registered by id, so order does not affect firing.
 Do not "fix" this by matching the engine.
 
-Still to do in this phase: zone bundles (`generateZoneBundle`) and the orphan-tag
-default bundle, then wiring the build into the app's Build action.
+**Zone and orphan bundles: done**, and the Build action in the app now runs
+natively and writes to the project's `outDir`. 3 bundles in ~350 ms.
+
+**Byte-identity was the wrong bar and is not achievable.** Recorded so nobody
+chases it again:
+
+| bundle | engine | native | difference |
+|---|---|---|---|
+| `core.js` | 18,661 | 18,659 | one folded constant, plus ordering |
+| `zone-global.js` | 8,362 | 8,383 | ordering, plus parenthesisation |
+| `zone-higher-ed.js` | 1,345 | 1,347 | same |
+
+Two causes, both benign:
+- **Ordering** — glob order against alphabetical. Deliberate (see above).
+- **Minifier output shape** — `return function(t){…}(i)` against
+  `return(function(t){…})(i)`; the same call, parenthesised differently. Current
+  esbuild produces the *parenthesised* form from equivalent input via both the
+  CLI and the Node API, so the engine's own output no longer reproduces from its
+  own inputs. Not worth reconciling.
+
+**The bar that replaced it: what the bundles register.** Executing each zone
+bundle against a stub `window.YourTM.registerTag` and comparing the records is
+the meaningful check, and it passes exactly — `zone-global` 19 tags,
+`zone-higher-ed` 2 tags, identical ids, triggers, priorities and consent on both
+sides. Use that comparison, not `cmp`, when changing the builder.
+
+Still outstanding for this phase: run a Swift-built bundle in a real browser
+against the live site and confirm the same 12 tags fire and 5 vendor scripts
+load.
 
 ### Phase 3 — the read-only and file routes
 `project`, `project/[type]/[id]`, `project/tags/[id]`, `settings`,

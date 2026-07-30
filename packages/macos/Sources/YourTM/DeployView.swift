@@ -162,18 +162,29 @@ struct DeployView: View {
         rum = try? await state.api.rumStatus()
     }
 
+    /// Compile the container natively — esbuild driven directly, no engine.
+    ///
+    /// Output goes to the project's `outDir`, exactly where the engine wrote it,
+    /// so the CLI and anything else reading `dist/ytm` are unaffected.
     private func build() async {
         working = "build"
         defer { working = nil }
+        let started = Date()
         do {
-            let data = try await state.api.build()
-            if let pretty = try? JSONSerialization.jsonObject(with: data),
-               let str = try? JSONSerialization.data(withJSONObject: pretty, options: [.prettyPrinted]) {
-                buildOutput = String(data: str, encoding: .utf8)
-            } else {
-                buildOutput = String(data: data, encoding: .utf8)
-            }
-            state.showToast("Build finished")
+            let bundles = try await NativeBuilder.buildAndWrite(
+                projectPath: state.projectPath,
+                containerId: state.containerId
+            )
+            let total = bundles.reduce(0) { $0 + $1.size }
+            let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+            let size = ByteCountFormatter.string(fromByteCount: Int64(total), countStyle: .file)
+            let rows = bundles
+                .map { b in "  " + b.name.padding(toLength: 24, withPad: " ", startingAt: 0)
+                          + "\(b.size) bytes" }
+                .joined(separator: "\n")
+            let dir = NativeBuilder.outputDirectory(projectPath: state.projectPath).path
+            buildOutput = "\(bundles.count) bundles · \(size) · \(elapsed) ms\n\n\(rows)\n\n→ \(dir)"
+            state.showToast("Built \(bundles.count) bundles")
         } catch {
             buildOutput = "Build failed: \(error.localizedDescription)"
         }
