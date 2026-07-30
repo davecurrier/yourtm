@@ -164,6 +164,28 @@ Then load a Swift-built bundle in a real browser and confirm the same 12 tags
 fire and the same 5 vendor scripts load (the check `scratchpad/vendor-check.mjs`
 performs).
 
+**Status: core bundle done** (`NativeBuilder.buildCore`). Measured against the
+engine on the reference container: 18,659 vs 18,661 bytes, with exactly two
+differences and no others.
+
+1. **One constant folds differently.** The engine emits
+   `13*30*24*60*60*1e3`, native emits `390*24*60*60*1e3`. Both equal
+   33,696,000,000 — the 13-month consent expiry. Same esbuild (0.27.3), same
+   source file, reproducible from a cold engine restart with the output deleted;
+   CLI and Node API fold identically in isolation, so it is not the invocation.
+   Semantically equal, so it was not worth chasing further.
+2. **Asset ordering.** The engine emits glob order (`university-pages` first),
+   native emits alphabetical (`all-pages` first). Contents are **identical as a
+   set** — all 19 triggers and 13 variables match field for field.
+
+The ordering divergence is deliberate and should stay. Glob order is filesystem
+order, so the engine's builds are not reproducible across machines; sorting
+makes them so. Triggers are registered by id, so order does not affect firing.
+Do not "fix" this by matching the engine.
+
+Still to do in this phase: zone bundles (`generateZoneBundle`) and the orphan-tag
+default bundle, then wiring the build into the app's Build action.
+
 ### Phase 3 — the read-only and file routes
 `project`, `project/[type]/[id]`, `project/tags/[id]`, `settings`,
 `settings/project`, `project/deployment`, `project/clear`, `project/audit`,

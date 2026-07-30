@@ -33,7 +33,7 @@ enum NativeProjectReader {
     /// named exports to resolve against, so these are enumerated rather than
     /// proxied. The specialised variable helpers stamp a `type`, matching the
     /// shims the engine injects.
-    private static let stubSource = """
+    static let stubSource = """
     const identity = (v) => v;
     const typed = (t) => (v) => ({ ...v, type: v.type ?? t });
 
@@ -82,7 +82,7 @@ enum NativeProjectReader {
     private static let kinds: [AssetKind] = [.tags, .triggers, .variables, .zones]
 
     /// Every `.ts`/`.js` asset under `yourtm/<kind>/`, recursively.
-    private static func assetFiles(projectPath: String, kind: AssetKind) -> [URL] {
+    static func assetFiles(projectPath: String, kind: AssetKind) -> [URL] {
         let dir = URL(fileURLWithPath: projectPath).appendingPathComponent("yourtm/\(kind.rawValue)")
         guard let e = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil) else { return [] }
         return e.compactMap { $0 as? URL }
@@ -188,7 +188,7 @@ enum NativeProjectReader {
     }
 
     /// JSON string literal — safe to paste into generated JavaScript.
-    private static func jsString(_ s: String) -> String {
+    static func jsString(_ s: String) -> String {
         (try? String(data: JSONSerialization.data(withJSONObject: [s], options: .fragmentsAllowed),
                      encoding: .utf8))
             .map { String($0.dropFirst().dropLast()) } ?? "\"\(s)\""

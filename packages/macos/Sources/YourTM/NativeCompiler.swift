@@ -55,12 +55,16 @@ struct NativeCompiler {
         entry: URL,
         externals: [String] = [],
         alias: [String: String] = [:],
+        globalName: String? = nil,
+        target: String? = nil,
         minify: Bool = true
     ) async throws -> Result {
         guard let binary = Self.binaryURL else { throw CompileError.binaryMissing }
 
         var args = [entry.path, "--bundle", "--format=iife", "--log-level=warning"]
         if minify { args.append("--minify") }
+        if let globalName { args.append("--global-name=\(globalName)") }
+        if let target { args.append("--target=\(target)") }
         args.append(contentsOf: externals.map { "--external:\($0)" })
         args.append(contentsOf: alias.sorted { $0.key < $1.key }.map { "--alias:\($0.key)=\($0.value)" })
 
