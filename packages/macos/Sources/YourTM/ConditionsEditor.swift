@@ -42,13 +42,13 @@ struct ConditionsEditor: View {
                         ForEach(variableNames, id: \.self) { Text($0).tag($0) }
                     }
                     .labelsHidden()
-                    .frame(width: 170)
+                    .frame(width: 170, alignment: .leading)
 
                     Picker("", selection: $condition.op) {
                         ForEach(AssetCondition.Operator.allCases) { Text($0.label).tag($0) }
                     }
                     .labelsHidden()
-                    .frame(width: 130)
+                    .frame(width: 130, alignment: .leading)
 
                     if condition.op.takesValue {
                         TextField("value", text: $condition.value)

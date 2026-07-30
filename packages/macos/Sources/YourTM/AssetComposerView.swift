@@ -88,7 +88,7 @@ struct AssetComposerView: View {
                         Picker("", selection: $draft.type) {
                             ForEach(PickOptions.triggerTypes, id: \.self) { Text($0).tag($0) }
                         }
-                        .labelsHidden().frame(width: 200)
+                        .labelsHidden().frame(width: 200, alignment: .leading)
                     }
                 }
                 if kind == .variables {
@@ -97,7 +97,7 @@ struct AssetComposerView: View {
                         Picker("", selection: $draft.type) {
                             ForEach(PickOptions.variableTypes, id: \.self) { Text($0).tag($0) }
                         }
-                        .labelsHidden().frame(width: 200)
+                        .labelsHidden().frame(width: 200, alignment: .leading)
                     }
                     if draft.type == "datalayer" {
                         GridRow {

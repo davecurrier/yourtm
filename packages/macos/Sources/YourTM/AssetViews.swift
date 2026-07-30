@@ -329,7 +329,7 @@ struct AssetDetailView: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 200)
+                        .frame(width: 200, alignment: .leading)
                     }
                     // Only shown where the type gives them meaning: a pageview
                     // trigger has no event name and no element to select, and
@@ -359,7 +359,7 @@ struct AssetDetailView: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 200)
+                        .frame(width: 200, alignment: .leading)
                     }
                     // A variable's substance depends on its type: datalayer uses
                     // a key, constant a value, javascript the code editor below.
