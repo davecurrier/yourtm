@@ -159,7 +159,17 @@ struct DeployView: View {
 
     private func load() async {
         deployment = try? await state.api.deploymentInfo()
-        rum = try? await state.api.rumStatus()
+        // RUM state is a local record, not something to ask the engine for.
+        if let d = NativeSettings.deployment(projectPath: state.projectPath) {
+            rum = RUMStatus(success: true,
+                            enabled: d["rumEnabled"] as? Bool ?? false,
+                            sampleRate: d["rumSampleRate"] as? Double
+                                     ?? (d["rumSampleRate"] as? Int).map(Double.init) ?? 0,
+                            workerUrl: d["workerUrl"] as? String,
+                            error: nil)
+        } else {
+            rum = try? await state.api.rumStatus()
+        }
     }
 
     /// Compile the container natively — esbuild driven directly, no engine.
@@ -217,10 +227,34 @@ struct DeployView: View {
         await load()
     }
 
+    /// Toggle RUM by redeploying with a new sample rate.
+    ///
+    /// Goes through NativeDeployer so the full binding set from wrangler.toml is
+    /// resent. The engine's version sent only RUM_SAMPLE_RATE, which — because
+    /// the bindings array replaces everything — removed the TELEMETRY Durable
+    /// Object binding and broke the store RUM writes to.
     private func setRUM(enabled: Bool) async {
         working = "rum"
         defer { working = nil }
-        _ = try? await state.api.setRUM(enabled: enabled, sampleRate: rum?.sampleRate ?? 1.0)
+        let rate = (rum?.sampleRate ?? 0) > 0 ? (rum?.sampleRate ?? 0.05) : 0.05
+        do {
+            _ = try await NativeDeployer.setRUM(
+                projectPath: state.projectPath,
+                containerId: state.containerId,
+                enabled: enabled,
+                sampleRate: rate,
+                accountId: state.settings.cloudflare?.accountId ?? "",
+                apiToken: state.settings.cloudflare?.apiToken ?? ""
+            )
+            NativeSettings.updateDeployment(projectPath: state.projectPath, [
+                "rumEnabled": enabled,
+                "rumSampleRate": enabled ? rate : 0,
+                "rumUpdatedAt": ISO8601DateFormatter().string(from: Date()),
+            ])
+            state.showToast(enabled ? "RUM enabled at \(Int(rate * 100))%" : "RUM disabled")
+        } catch {
+            state.lastError = error.localizedDescription
+        }
         await load()
     }
 

@@ -52,6 +52,34 @@ enum NativeSettings {
         return settings
     }
 
+    /// Per-project deployment record from `~/.yourtm/config.json`.
+    ///
+    /// The engine keeps this under `deployments` keyed by absolute project
+    /// path, and it is where the RUM toggle's current state is remembered.
+    static func deployment(projectPath: String) -> [String: Any]? {
+        guard !projectPath.isEmpty,
+              let data = try? Data(contentsOf: configURL),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let all = root["deployments"] as? [String: Any] else { return nil }
+        return all[projectPath] as? [String: Any]
+    }
+
+    /// Merge keys into the project's deployment record, preserving the rest.
+    static func updateDeployment(projectPath: String, _ updates: [String: Any]) {
+        guard !projectPath.isEmpty,
+              let data = try? Data(contentsOf: configURL),
+              var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return }
+        var all = (root["deployments"] as? [String: Any]) ?? [:]
+        var entry = (all[projectPath] as? [String: Any]) ?? [:]
+        for (k, v) in updates { entry[k] = v }
+        all[projectPath] = entry
+        root["deployments"] = all
+        if let out = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted]) {
+            try? out.write(to: configURL, options: .atomic)
+        }
+    }
+
     /// Pull containerId / name out of `yourtm.config.ts`.
     ///
     /// Regex rather than evaluation, matching what the engine does: these are

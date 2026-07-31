@@ -91,12 +91,37 @@ enum NativeDeployer {
         return w
     }
 
+    /// Change the RUM sample rate and redeploy.
+    ///
+    /// Deliberately re-parses wrangler.toml and sends the **full** binding set
+    /// with RUM_SAMPLE_RATE overridden. The engine's version sends only
+    /// `[RUM_SAMPLE_RATE]`, and because the metadata bindings array replaces
+    /// every binding on the script, that silently removes the TELEMETRY
+    /// Durable Object binding — the store telemetry is written to. Toggling RUM
+    /// would have broken the thing RUM exists to feed.
+    static func setRUM(
+        projectPath: String,
+        containerId: String,
+        enabled: Bool,
+        sampleRate: Double,
+        accountId: String,
+        apiToken: String
+    ) async throws -> Result {
+        let value = enabled ? String(sampleRate) : "0"
+        return try await deploy(
+            projectPath: projectPath, containerId: containerId, environment: "production",
+            accountId: accountId, apiToken: apiToken,
+            overrideVars: ["RUM_SAMPLE_RATE": value]
+        )
+    }
+
     static func deploy(
         projectPath: String,
         containerId: String,
         environment: String,
         accountId: String,
-        apiToken: String
+        apiToken: String,
+        overrideVars: [String: String] = [:]
     ) async throws -> Result {
         guard !projectPath.isEmpty else { throw DeployError.noProject }
         guard !accountId.isEmpty, !apiToken.isEmpty else { throw DeployError.noCredentials }
@@ -110,7 +135,16 @@ enum NativeDeployer {
         let client = CloudflareClient(accountId: accountId, apiToken: apiToken)
         guard await client.verifyToken() else { throw DeployError.invalidToken }
 
-        let w = parseWrangler(at: root.appendingPathComponent("wrangler.toml"))
+        var w = parseWrangler(at: root.appendingPathComponent("wrangler.toml"))
+
+        // Apply var overrides on top of the parsed set, never instead of it.
+        for (key, value) in overrideVars {
+            if let i = w.bindings.firstIndex(where: { $0.name == key && $0.type == "plain_text" }) {
+                w.bindings[i].text = value
+            } else {
+                w.bindings.append(.init(name: key, type: "plain_text", text: value))
+            }
+        }
         let name = w.name ?? "ytm-\(containerId.lowercased().replacingOccurrences(of: "[^a-z0-9]", with: "-", options: .regularExpression))"
 
         var migrations: [String: Any]?
