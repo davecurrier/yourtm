@@ -248,23 +248,26 @@ struct TagComposerView: View {
         creating = true
         defer { creating = false }
         do {
-            var config: [String: Any] = [
-                "name": draft.name,
-                "description": draft.description.isEmpty ? draft.name : draft.description,
-                "triggers": draft.triggers.isEmpty ? ["all-pages"] : draft.triggers,
-                "zones": draft.zones.isEmpty ? ["global"] : draft.zones,
-                "code": draft.code,
-            ]
-            if !draft.consent.isEmpty { config["consent"] = draft.consent }
-
-            let result = try await state.api.createAsset(type: "tag", template: "custom-code", config: config)
-            if result.success == false {
-                error = result.error ?? "Create failed"
-                return
-            }
+            // Written directly, like every other asset. Going through the
+            // engine here meant tags were created by a different path than the
+            // one that edits them, which is how dual-write bugs start.
+            try AssetFactory.create(
+                kind: .tags,
+                id: draft.name,
+                name: draft.name,
+                description: draft.description.isEmpty ? draft.name : draft.description,
+                type: "script",
+                key: "", value: "",
+                code: draft.code,
+                patterns: [],
+                triggers: draft.triggers.isEmpty ? ["all-pages"] : draft.triggers,
+                zones: draft.zones.isEmpty ? ["global"] : draft.zones,
+                consent: draft.consent,
+                projectPath: state.projectPath
+            )
             await state.refresh()
             state.showToast("Created \(draft.name)")
-            onCreated(result.id ?? draft.name)
+            onCreated(draft.name)
         } catch {
             self.error = error.localizedDescription
         }

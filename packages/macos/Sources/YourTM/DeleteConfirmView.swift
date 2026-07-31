@@ -85,11 +85,7 @@ struct DeleteConfirmView: View {
         deleting = true
         defer { deleting = false }
         do {
-            let result = try await state.api.deleteAsset(kind: kind, id: asset.id)
-            if result.success == false {
-                error = result.error ?? "Delete failed"
-                return
-            }
+            try AssetFactory.delete(kind: kind, id: asset.id, projectPath: state.projectPath)
             await state.refresh()
             state.showToast("Deleted \(asset.name)")
             onDeleted()

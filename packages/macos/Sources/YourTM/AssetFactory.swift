@@ -24,6 +24,19 @@ enum AssetFactory {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// Delete an asset's source file.
+    ///
+    /// Reference checking lives in the UI (see ReferenceIndex); this only
+    /// removes the file, and refuses if it is not where it should be rather
+    /// than reporting a success that deleted nothing.
+    static func delete(kind: AssetKind, id: String, projectPath: String) throws {
+        guard !projectPath.isEmpty else { throw FactoryError.noProject }
+        guard let url = fileURL(kind: kind, id: id, projectPath: projectPath) else {
+            throw FactoryError.writeFailed("no source file for \(kind.rawValue)/\(id)")
+        }
+        try FileManager.default.removeItem(at: url)
+    }
+
     private static let defineFn: [AssetKind: String] = [
         .tags: "defineTag", .triggers: "defineTrigger",
         .variables: "defineVariable", .zones: "defineZone",
@@ -40,6 +53,7 @@ enum AssetFactory {
         kind: AssetKind, id: String, name: String, description: String,
         type: String, key: String, value: String, code: String = "",
         patterns: [String], conditions: [[String: Any]] = [],
+        triggers: [String] = [], zones: [String] = [], consent: [String] = [],
         projectPath: String
     ) throws {
         guard !projectPath.isEmpty else { throw FactoryError.noProject }
@@ -51,6 +65,14 @@ enum AssetFactory {
         }
 
         var lines = ["  name: \(quoted(name))"]
+
+        if kind == .tags {
+            // Tags carry their wiring inline; the compiler reads these directly.
+            lines.append("  type: \(quoted(type.isEmpty ? "script" : type))")
+            lines.append("  triggers: [\(triggers.map(quoted).joined(separator: ", "))]")
+            if !zones.isEmpty { lines.append("  zones: [\(zones.map(quoted).joined(separator: ", "))]") }
+            if !consent.isEmpty { lines.append("  consent: [\(consent.map(quoted).joined(separator: ", "))]") }
+        }
         if kind == .triggers || kind == .variables, !type.isEmpty {
             lines.append("  type: \(quoted(type))")
         }
@@ -59,6 +81,13 @@ enum AssetFactory {
         }
         if kind == .variables, type == "constant" {
             lines.append("  value: \(quoted(value))")
+        }
+        if kind == .tags, !code.isEmpty {
+            let escaped = code
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "`", with: "\\`")
+                .replacingOccurrences(of: "${", with: "\\${")
+            lines.append("  code: `\n\(escaped)\n  `")
         }
         if kind == .variables, type == "javascript", !code.isEmpty {
             // Template literal: the body is multi-line and may contain quotes.
