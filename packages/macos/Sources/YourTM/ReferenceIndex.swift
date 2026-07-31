@@ -2,11 +2,15 @@ import Foundation
 
 /// One place an asset is referenced from.
 struct Reference: Identifiable, Hashable {
+    /// The referencing asset's id. Needed to tell a reference from inside a
+    /// multi-selection apart from one that will survive the delete; names are
+    /// not guaranteed to equal ids.
+    var assetId: String
     var assetName: String
     var kind: AssetKind
     /// How it's used, e.g. "trigger", "blocking trigger", "zone", "in code"
     var role: String
-    var id: String { "\(kind.rawValue):\(assetName):\(role)" }
+    var id: String { "\(kind.rawValue):\(assetId):\(role)" }
 }
 
 /// Answers "what would break if I delete this?" by scanning the whole container.
@@ -29,10 +33,10 @@ struct ReferenceIndex {
         var out: [Reference] = []
         for tag in project.tags {
             if tag.triggers.contains(name) {
-                out.append(Reference(assetName: tag.name, kind: .tags, role: "fires on it"))
+                out.append(Reference(assetId: tag.id, assetName: tag.name, kind: .tags, role: "fires on it"))
             }
             if tag.blocking.contains(name) {
-                out.append(Reference(assetName: tag.name, kind: .tags, role: "blocked by it"))
+                out.append(Reference(assetId: tag.id, assetName: tag.name, kind: .tags, role: "blocked by it"))
             }
         }
         return out
@@ -41,7 +45,7 @@ struct ReferenceIndex {
     private func zoneRefs(_ name: String) -> [Reference] {
         project.tags
             .filter { $0.zones.contains(name) }
-            .map { Reference(assetName: $0.name, kind: .tags, role: "in this zone") }
+            .map { Reference(assetId: $0.id, assetName: $0.name, kind: .tags, role: "in this zone") }
     }
 
     private func variableRefs(_ name: String) -> [Reference] {
@@ -49,13 +53,13 @@ struct ReferenceIndex {
         var out: [Reference] = []
 
         for tag in project.tags where (tag.code ?? "").contains(token) {
-            out.append(Reference(assetName: tag.name, kind: .tags, role: "used in code"))
+            out.append(Reference(assetId: tag.id, assetName: tag.name, kind: .tags, role: "used in code"))
         }
         // Variables can reference other variables in their own JS
         for v in project.variables where v.name != name {
             let body = (v.code ?? "") + (v.value ?? "")
             if body.contains(token) {
-                out.append(Reference(assetName: v.name, kind: .variables, role: "used in code"))
+                out.append(Reference(assetId: v.id, assetName: v.name, kind: .variables, role: "used in code"))
             }
         }
         // Triggers reference variables by bare name in their conditions:
@@ -69,7 +73,7 @@ struct ReferenceIndex {
                 return false
             }
             if matches {
-                out.append(Reference(assetName: t.name, kind: .triggers, role: "in a condition"))
+                out.append(Reference(assetId: t.id, assetName: t.name, kind: .triggers, role: "in a condition"))
             }
         }
         return out

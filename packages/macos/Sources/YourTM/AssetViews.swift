@@ -6,9 +6,9 @@ struct AssetListView: View {
     @EnvironmentObject var state: AppState
     let kind: AssetKind
     @State private var search = ""
-    @State private var selectedId: String?
+    @State private var selection = Set<String>()
     @State private var composing = false
-    @State private var pendingDelete: Asset?
+    @State private var pendingDelete: [Asset] = []
 
     private var assets: [Asset] {
         let all = state.project.assets(kind).sorted { $0.name < $1.name }
@@ -20,21 +20,39 @@ struct AssetListView: View {
         }
     }
 
+    /// Right-clicking inside a multi-selection acts on the whole selection, as
+    /// Finder does; right-clicking outside it acts on the row under the cursor.
+    private func deleteTargets(for asset: Asset) -> [Asset] {
+        guard selection.count > 1, selection.contains(asset.id) else { return [asset] }
+        return assets.filter { selection.contains($0.id) }
+    }
+
+    @ViewBuilder
+    private func rowMenu(for asset: Asset) -> some View {
+        let targets = deleteTargets(for: asset)
+        Button(targets.count > 1 ? "Delete \(targets.count) \(kind.rawValue)…"
+                                 : "Delete \(asset.name)…",
+               systemImage: "trash", role: .destructive) {
+            pendingDelete = targets
+        }
+    }
+
     var body: some View {
         HSplitView {
-            List(assets, selection: $selectedId) { asset in
+            List(assets, selection: $selection) { asset in
                 AssetRow(kind: kind, asset: asset)
                     .tag(asset.id)
-                    .contextMenu {
-                        Button("Delete \(asset.name)…", systemImage: "trash", role: .destructive) {
-                            pendingDelete = asset
-                        }
-                    }
+                    .contextMenu { rowMenu(for: asset) }
+            }
+            .onDeleteCommand {
+                // ⌫ and ⌘⌫ both land here.
+                let targets = assets.filter { selection.contains($0.id) }
+                if !targets.isEmpty { pendingDelete = targets }
             }
             .frame(minWidth: 300, idealWidth: 340, maxWidth: 460)
             .searchable(text: $search, placement: .sidebar, prompt: "Filter \(kind.title.lowercased())")
             .onAppear {
-                if selectedId == nil { selectedId = assets.first?.id }
+                if selection.isEmpty, let first = assets.first?.id { selection = [first] }
             }
 
             Group {
@@ -42,7 +60,7 @@ struct AssetListView: View {
                     TagComposerView(
                         onCreated: { newId in
                             composing = false
-                            selectedId = newId
+                            selection = [newId]
                         },
                         onCancel: { composing = false }
                     )
@@ -51,12 +69,19 @@ struct AssetListView: View {
                         kind: kind,
                         onCreated: { newId in
                             composing = false
-                            selectedId = newId
+                            selection = [newId]
                         },
                         onCancel: { composing = false }
                     )
-                } else if let id = selectedId, let asset = assets.first(where: { $0.id == id }) {
-                    AssetDetailView(kind: kind, asset: asset, onRequestDelete: { pendingDelete = asset })
+                } else if selection.count > 1 {
+                    MultiSelectionView(
+                        kind: kind,
+                        assets: assets.filter { selection.contains($0.id) },
+                        onDelete: { pendingDelete = assets.filter { selection.contains($0.id) } },
+                        onClear: { if let first = selection.first { selection = [first] } }
+                    )
+                } else if let id = selection.first, let asset = assets.first(where: { $0.id == id }) {
+                    AssetDetailView(kind: kind, asset: asset, onRequestDelete: { pendingDelete = [asset] })
                         .id(id) // reset editor state when switching assets
                 } else {
                     ContentUnavailableView(
@@ -71,7 +96,7 @@ struct AssetListView: View {
         .navigationTitle(kind.title)
         .toolbar {
             Button {
-                selectedId = nil
+                selection = []
                 composing = true
             } label: {
                 Label("New \(kind.singular)", systemImage: "plus")
@@ -85,13 +110,15 @@ struct AssetListView: View {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
         }
-        .onChange(of: selectedId) { _, newValue in
-            // Picking a tag from the list exits composer mode
-            if newValue != nil { composing = false }
+        .onChange(of: selection) { _, newValue in
+            // Picking anything from the list exits composer mode
+            if !newValue.isEmpty { composing = false }
         }
-        .sheet(item: $pendingDelete) { asset in
-            DeleteConfirmView(asset: asset, kind: kind) {
-                if selectedId == asset.id { selectedId = nil }
+        .sheet(isPresented: Binding(get: { !pendingDelete.isEmpty },
+                                    set: { if !$0 { pendingDelete = [] } })) {
+            DeleteConfirmView(assets: pendingDelete, kind: kind) {
+                selection.subtract(pendingDelete.map(\.id))
+                pendingDelete = []
             }
             .environmentObject(state)
         }
