@@ -52,3 +52,8 @@ export {
   getCloudflareCredentials,
   generateWorkerScript,
 } from './cloudflare/api.js';
+
+// GTM vendor detection — used by the importer to turn a GTM tag into a real
+// implementation rather than a "manual implementation required" stub.
+export { detectVendor, getSupportedVendors } from './vendors/index.js';
+export type { VendorTagResult, GTMTag } from './vendors/index.js';

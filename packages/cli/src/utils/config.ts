@@ -5,6 +5,8 @@ import * as esbuild from 'esbuild';
 import { logger } from './logger.js';
 
 export interface YourTMConfig {
+  /** Emit verbose runtime logging. Inlined into every compiled container. */
+  debug?: boolean;
   // Container identification
   containerId: string;
   containerName?: string;

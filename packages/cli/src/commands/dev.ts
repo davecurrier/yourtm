@@ -46,7 +46,6 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     const host = options.host || config.devServer?.host || 'localhost';
 
     // Preview mode configuration
-    const previewMode = options.preview || false;
     const previewEndpoint = options.previewEndpoint || `http://${host}:${port}/_ytm/telemetry`;
 
     // Initial build
