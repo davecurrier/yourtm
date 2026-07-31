@@ -174,25 +174,18 @@ struct SitesView: View {
     private func load() async {
         loading = true
         defer { loading = false }
-        do {
-            sites = try await state.api.wordpressSites()
-        } catch {
-            state.lastError = error.localizedDescription
-        }
+        sites = NativeWordPress.sites()
     }
 
     private func sync(_ site: WordPressSite) async {
         working = site.id
         defer { working = nil }
         do {
-            let r = try await state.api.wordpressSync(siteId: site.id, environment: site.environment)
-            if r.success == true {
-                let size = r.totalSize.map { " · \(ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file))" } ?? ""
-                results[site.id] = "Published \(r.version ?? "")\(size)"
-                state.showToast("Published to \(site.host)")
-            } else {
-                results[site.id] = "Failed — \(r.error ?? "unknown error")"
-            }
+            let r = try await NativeWordPress.sync(site: site, projectPath: state.projectPath,
+                                                   containerId: state.containerId)
+            let size = ByteCountFormatter.string(fromByteCount: Int64(r.totalSize), countStyle: .file)
+            results[site.id] = "Published \(r.version) · \(r.bundles) bundles · \(size)"
+            state.showToast("Published to \(site.host)")
         } catch {
             results[site.id] = "Failed — \(error.localizedDescription)"
         }
@@ -203,10 +196,7 @@ struct SitesView: View {
         working = site.id
         defer { working = nil }
         do {
-            let r = try await state.api.wordpressSiteAction(id: site.id, action: name)
-            results[site.id] = r.success == false
-                ? "Failed — \(r.error ?? "unknown error")"
-                : (r.message ?? "Done")
+            results[site.id] = try await NativeWordPress.action(site: site, name)
         } catch {
             results[site.id] = "Failed — \(error.localizedDescription)"
         }
@@ -216,7 +206,7 @@ struct SitesView: View {
     private func remove(_ site: WordPressSite) async {
         working = site.id
         defer { working = nil }
-        _ = try? await state.api.wordpressRemoveSite(id: site.id)
+        NativeWordPress.removeSite(id: site.id)
         pendingRemoval = nil
         await load()
     }
@@ -333,12 +323,9 @@ private struct AddSiteSheet: View {
         working = "test"
         defer { working = nil }
         do {
-            let r = try await state.api.wordpressTest(url: normalizedURL, apiKey: apiKey)
-            testPassed = r.success == true
-            testResult = testPassed ? (r.message ?? "Connection successful.") : (r.error ?? "Connection failed.")
-        } catch {
-            testPassed = false
-            testResult = error.localizedDescription
+            let message = await NativeWordPress.test(url: normalizedURL, apiKey: apiKey)
+            testPassed = message.hasPrefix("Connection successful")
+            testResult = message
         }
     }
 
@@ -346,20 +333,13 @@ private struct AddSiteSheet: View {
         working = "connect"
         defer { working = nil }
         do {
-            let r = try await state.api.wordpressAddSite(
-                url: normalizedURL,
-                apiKey: apiKey,
-                containerId: state.containerId,
-                environment: environment
+            let site = try await NativeWordPress.addSite(
+                url: normalizedURL, apiKey: apiKey,
+                containerId: state.containerId, environment: environment
             )
-            if let site = r.site {
-                state.showToast("Connected \(site.host)")
-                await onDone()
-                dismiss()
-            } else {
-                testPassed = false
-                testResult = r.error ?? "Could not connect the site."
-            }
+            state.showToast("Connected \(site.host)")
+            await onDone()
+            dismiss()
         } catch {
             testPassed = false
             testResult = error.localizedDescription
