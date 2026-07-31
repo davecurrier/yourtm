@@ -85,6 +85,9 @@ import * as core from './core';
 import * as dataLayer from './dataLayer';
 import * as triggers from './triggers';
 import * as consent from './consent';
+import { initConsentMode, type ConsentModeConfig } from './consentMode';
+export { initConsentMode, RECOMMENDED as recommendedConsentMode } from './consentMode';
+export type { ConsentModeConfig, GoogleSignal } from './consentMode';
 
 import { type VariableDefinition, Environment } from '@yourtm/core';
 
@@ -95,6 +98,11 @@ export interface YourTMConfig {
   previewMode?: boolean;
   previewEndpoint?: string;
   debug?: boolean;
+  /**
+   * Google Consent Mode v2. Emitted before any tag so gtag sees the defaults
+   * when it initialises — hits sent earlier carry no consent state.
+   */
+  consentMode?: ConsentModeConfig;
   tags?: core.TagConfig[];
   triggers?: triggers.TriggerConfig[];
   variables?: VariableDefinition[];
@@ -120,6 +128,12 @@ export function initYourTM(config: YourTMConfig): void {
 
   // Initialize consent
   consent.initConsent();
+
+  // Emit Google Consent Mode defaults immediately after consent state is
+  // restored and before anything can load gtag. Since 15 June 2026 ad_storage
+  // is the only control Google Ads consults, so a hit that leaves before this
+  // runs is unattributable and irrecoverable.
+  initConsentMode(config.consentMode);
 
   // Initialize dataLayer
   dataLayer.initDataLayer();

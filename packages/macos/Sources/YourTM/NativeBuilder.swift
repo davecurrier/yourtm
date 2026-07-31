@@ -69,6 +69,55 @@ enum NativeBuilder {
         return (found as NSString).standardizingPath
     }
 
+    // MARK: Container config
+
+    /// Evaluate `yourtm.config.ts` and return it as JSON.
+    ///
+    /// Regexes are fine for pulling a single string literal like `containerId`,
+    /// but `consentMode` is a nested object with arrays, so it has to be
+    /// evaluated. Same machinery as the asset reader: esbuild to a bundle,
+    /// JavaScriptCore to run it.
+    static func loadConfig(projectPath: String) async throws -> [String: Any] {
+        let configURL = URL(fileURLWithPath: projectPath).appendingPathComponent("yourtm.config.ts")
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return [:] }
+
+        let work = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ytm-cfg-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: work) }
+
+        let stub = work.appendingPathComponent("yourtm-core-stub.js")
+        try NativeProjectReader.stubSource.write(to: stub, atomically: true, encoding: .utf8)
+
+        let entry = work.appendingPathComponent("cfg.mjs")
+        try """
+        import * as mod from \(NativeProjectReader.jsString(configURL.path));
+        const cfg = mod.default ?? mod.config ?? {};
+        globalThis.YTM_CONFIG = JSON.stringify(cfg, (_k, v) =>
+          (typeof v === 'function' ? undefined : v));
+        """.write(to: entry, atomically: true, encoding: .utf8)
+
+        let compiled = try await NativeCompiler().bundle(
+            entry: entry,
+            alias: ["@yourtm/core": stub.path,
+                    "@yourtm/vendors": stub.path,
+                    "@yourtm/runtime": stub.path],
+            minify: false
+        )
+        let ctx = JSContext()!
+        var thrown: String?
+        ctx.exceptionHandler = { _, exc in thrown = exc?.toString() ?? "unknown JS exception" }
+        ctx.evaluateScript(compiled.code)
+        if let thrown { throw BuildError.evaluate(thrown) }
+
+        guard let json = ctx.objectForKeyedSubscript("YTM_CONFIG")?.toString(),
+              let data = json.data(using: .utf8),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return [:]
+        }
+        return obj
+    }
+
     // MARK: Definitions with functions preserved
 
     /// Re-evaluate the container, keeping functions as `__FUNC_…__` strings and
@@ -420,6 +469,17 @@ enum NativeBuilder {
         let runtimeSrc = try resolveRuntimeSource(projectPath: projectPath)
         let defs = try await definitionsJSON(projectPath: projectPath)
 
+        // Opt-in: emitted only when the container declares consentMode, so no
+        // container silently starts sending Google consent signals it did not
+        // ask for. The value is a legal posture, not a technical default.
+        let config = (try? await loadConfig(projectPath: projectPath)) ?? [:]
+        var consentModeLine = ""
+        if let cm = config["consentMode"] as? [String: Any],
+           let data = try? JSONSerialization.data(withJSONObject: cm, options: [.sortedKeys]),
+           let json = String(data: data, encoding: .utf8) {
+            consentModeLine = "\n  consentMode: \(json),"
+        }
+
         // Byte-for-byte the engine's template — leading newline and two-space
         // indentation included, because any difference shows up in the output.
         let entryCode = """
@@ -428,7 +488,7 @@ enum NativeBuilder {
 
         const config = {
           containerId: '\(containerId)',
-          debug: \(debug),
+          debug: \(debug),\(consentModeLine)
           triggers: \(defs.triggers),
           variables: \(defs.variables)
         };
