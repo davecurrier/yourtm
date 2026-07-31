@@ -190,18 +190,29 @@ struct DeployView: View {
         }
     }
 
+    /// Deploy the container's worker natively — no engine in the path.
     private func deploy() async {
         working = "deploy"
         defer { working = nil }
         do {
-            let result = try await state.api.deploy(environment: environment)
-            if result.success == false {
-                state.lastError = result.error ?? "Deploy failed"
-            } else {
-                state.showToast("Deployed")
-            }
+            let r = try await NativeDeployer.deploy(
+                projectPath: state.projectPath,
+                containerId: state.containerId,
+                environment: environment,
+                accountId: state.settings.cloudflare?.accountId ?? "",
+                apiToken: state.settings.cloudflare?.apiToken ?? ""
+            )
+            let routeLines = r.routes
+                .map { "  \($0.pattern.padding(toLength: 34, withPad: " ", startingAt: 0))\($0.status)"
+                     + ($0.error.map { e in " — " + e } ?? "") }
+                .joined(separator: "\n")
+            buildOutput = "Deployed \(r.workerName) to \(environment)"
+                + (r.workerUrl.map { "\n\($0)" } ?? "")
+                + (routeLines.isEmpty ? "" : "\n\nroutes:\n\(routeLines)")
+            state.showToast("Deployed \(r.workerName)")
         } catch {
             state.lastError = error.localizedDescription
+            buildOutput = "Deploy failed: \(error.localizedDescription)"
         }
         await load()
     }
