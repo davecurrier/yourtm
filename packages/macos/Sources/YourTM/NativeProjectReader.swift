@@ -53,6 +53,8 @@ enum NativeProjectReader {
     export const defineFormSubmitTrigger = typed('formSubmit');
     export const defineHistoryChangeTrigger = typed('historyChange');
     export const defineDataLayerEventTrigger = typed('customEvent');
+    export const defineCustomEventTrigger = typed('customEvent');
+    export const defineInitTrigger = typed('init');
     export const defineYouTubeVideoTrigger = typed('youtube');
     export const defineCustomTrigger = typed('custom');
 

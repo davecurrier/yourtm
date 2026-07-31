@@ -905,3 +905,30 @@ export function isTriggerDefinition(value: unknown): value is TriggerDefinition 
     trigger.config !== null
   );
 }
+
+/**
+ * Fire on a `dataLayer` event by name.
+ *
+ * The GTM importer emits this for `customEvent` triggers and the CLI compiler
+ * has always shimmed it, so imported containers compiled while never being
+ * valid TypeScript — the symbol simply did not exist. Defining it here makes
+ * the generated import honest instead of relying on a shim being injected.
+ */
+export function defineCustomEventTrigger(
+  input: { name: string; description?: string; event?: string; eventName?: string;
+           conditions?: unknown; priority?: number; enabled?: boolean }
+): Record<string, unknown> {
+  return { ...input, type: 'customEvent' };
+}
+
+/**
+ * Fire once as the container initialises, before any pageview.
+ *
+ * Same history as defineCustomEventTrigger: emitted by the importer, shimmed by
+ * the compiler, never actually exported.
+ */
+export function defineInitTrigger(
+  input: { name: string; description?: string; priority?: number; enabled?: boolean }
+): Record<string, unknown> {
+  return { ...input, type: 'init' };
+}

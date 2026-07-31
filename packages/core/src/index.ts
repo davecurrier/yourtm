@@ -121,6 +121,8 @@ export {
   defineVisibilityTrigger,
   defineFormSubmitTrigger,
   defineDataLayerEventTrigger,
+  defineCustomEventTrigger,
+  defineInitTrigger,
   defineHistoryChangeTrigger,
   defineYouTubeVideoTrigger,
   defineCustomTrigger,
