@@ -29,8 +29,22 @@ echo "→ bundling ts-morph for JavaScriptCore"
   --outfile="$OUT/ytm-script-runtime.js" \
   --log-level=warning
 
+# @yourtm/runtime, pre-bundled to one self-contained ESM file.
+#
+# A compiled container's entry point imports initYourTM from the runtime, so the
+# runtime source has to be reachable at build time. Resolving it by walking the
+# filesystem only works inside this monorepo — build a container from anywhere
+# else and it fails, which would break the app the moment it is handed to
+# someone. Shipping the source tree alone is not enough either: the runtime
+# imports @yourtm/core, so it is bundled here instead, with core resolved in.
+echo "→ bundling @yourtm/runtime"
+"$ESBUILD" "$REPO/packages/runtime/src/index.ts" \
+  --bundle --format=esm --platform=browser \
+  --outfile="$OUT/ytm-runtime.mjs" \
+  --log-level=warning
+
 # Ship esbuild itself so the app can compile containers with no toolchain installed.
 cp "$ESBUILD" "$OUT/esbuild"
 chmod +x "$OUT/esbuild"
 
-echo "✓ $(cd "$OUT" && ls -lh ytm-script-runtime.js esbuild | awk '{print $9" "$5}' | tr '\n' ' ')"
+echo "✓ $(cd "$OUT" && ls -lh ytm-script-runtime.js ytm-runtime.mjs esbuild | awk '{print $9" "$5}' | tr '\n' ' ')"

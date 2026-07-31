@@ -41,11 +41,29 @@ enum NativeBuilder {
 
     // MARK: Runtime resolution
 
-    /// Mirrors `resolveRuntimeSource()` in the CLI compiler: walk up from the
-    /// project looking for the runtime's TypeScript entry.
+    /// Locate the runtime that a compiled container imports `initYourTM` from.
+    ///
+    /// The bundled copy wins. The CLI resolves this by walking the filesystem
+    /// for `packages/runtime/src/index.ts`, which only ever succeeds inside this
+    /// monorepo — building a container from anywhere else fails outright, and
+    /// that would break the app the first time it was handed to someone with no
+    /// checkout. `scripts/build-js-runtime.sh` pre-bundles the runtime (with
+    /// @yourtm/core resolved into it) so the app carries its own copy.
+    ///
+    /// The filesystem walk stays as the development fallback, so `swift run`
+    /// against a working tree picks up runtime edits without a resource rebuild.
     static func resolveRuntimeSource(projectPath: String) throws -> String {
-        var candidates: [String] = []
         let fm = FileManager.default
+
+        if let bundled = Foundation.Bundle.main.url(forResource: "ytm-runtime", withExtension: "mjs"),
+           fm.fileExists(atPath: bundled.path) {
+            return bundled.path
+        }
+        if let dev = ScriptRuntime.developmentResourceURL(named: "ytm-runtime.mjs") {
+            return dev.path
+        }
+
+        var candidates: [String] = []
 
         func walkUp(from start: String) {
             var dir = start
@@ -60,7 +78,6 @@ enum NativeBuilder {
         }
 
         walkUp(from: projectPath)
-        if let bundled = Foundation.Bundle.main.resourceURL?.path { walkUp(from: bundled) }
         walkUp(from: fm.currentDirectoryPath)
 
         guard let found = candidates.first(where: { fm.fileExists(atPath: $0) }) else {
