@@ -13,6 +13,7 @@ dist/
 Sources/YourTM/Resources/esbuild
 Sources/YourTM/Resources/ytm-script-runtime.js
 Sources/YourTM/Resources/ytm-runtime.mjs
+Sources/YourTM/Resources/ytm-gtm-import.js
 
 # Generated app icon — regenerate from icon/GenerateIcon.swift
 icon/YourTM.icns

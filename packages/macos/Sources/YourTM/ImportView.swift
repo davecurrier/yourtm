@@ -11,8 +11,8 @@ struct ImportView: View {
     @State private var replaceExisting = false
     @State private var confirmReplace = false
     @State private var working: String?
-    @State private var result: ImportResult?
-    @State private var clearInfo: ClearResult?
+    @State private var result: NativeImporter.Result?
+    @State private var clearInfo: NativeImporter.Cleared?
     @State private var isTargeted = false
 
     var body: some View {
@@ -26,7 +26,7 @@ struct ImportView: View {
                 } else {
                     dropZone
                 }
-                if let clearInfo, clearInfo.success == true {
+                if let clearInfo {
                     backupCard(clearInfo)
                 }
                 if let result {
@@ -199,12 +199,12 @@ struct ImportView: View {
 
     // MARK: Results
 
-    private func backupCard(_ c: ClearResult) -> some View {
+    private func backupCard(_ c: NativeImporter.Cleared) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "clock.arrow.circlepath").foregroundStyle(.blue)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Backed up \(c.total ?? 0) assets").font(.callout.weight(.medium))
-                Text(c.backupPath ?? "").font(.caption.monospaced()).foregroundStyle(.secondary)
+                Text("Backed up \(c.total) assets").font(.callout.weight(.medium))
+                Text(c.backupPath).font(.caption.monospaced()).foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
             Spacer()
@@ -214,30 +214,33 @@ struct ImportView: View {
         .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func resultCard(_ r: ImportResult) -> some View {
+    private func resultCard(_ r: NativeImporter.Result) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(r.success == true ? "Import complete" : "Import failed",
-                  systemImage: r.success == true ? "checkmark.circle.fill" : "xmark.circle.fill")
+            Label("Import complete", systemImage: "checkmark.circle.fill")
                 .font(.headline)
-                .foregroundStyle(r.success == true ? .green : .red)
+                .foregroundStyle(.green)
 
-            if let i = r.imported {
-                HStack(spacing: 26) {
-                    stat("Tags", i.tags ?? 0, "tag", .purple)
-                    stat("Triggers", i.triggers ?? 0, "bolt", .orange)
-                    stat("Variables", i.variables ?? 0, "curlybraces", .teal)
-                    stat("Zones", i.zones ?? 0, "square.grid.2x2", .indigo)
-                }
+            HStack(spacing: 26) {
+                stat("Tags", r.counts[.tags] ?? 0, "tag", .purple)
+                stat("Triggers", r.counts[.triggers] ?? 0, "bolt", .orange)
+                stat("Variables", r.counts[.variables] ?? 0, "curlybraces", .teal)
+                stat("Zones", r.counts[.zones] ?? 0, "square.grid.2x2", .indigo)
             }
-            if let s = r.skipped,
-               (s.tags ?? 0) + (s.triggers ?? 0) + (s.variables ?? 0) > 0 {
-                Text("Skipped — unsupported types: \(s.tags ?? 0) tags, \(s.triggers ?? 0) triggers, \(s.variables ?? 0) variables")
+
+            let skippedTotal = r.skipped.values.reduce(0, +)
+            if skippedTotal > 0 {
+                Text("Skipped \(skippedTotal) unsupported: " + r.skipped
+                        .filter { $0.value > 0 }
+                        .sorted { $0.key < $1.key }
+                        .map { "\($0.value) \($0.key)" }
+                        .joined(separator: ", "))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if let w = r.warnings, !w.isEmpty {
-                DisclosureGroup("\(w.count) warnings") {
+
+            if !r.warnings.isEmpty {
+                DisclosureGroup("\(r.warnings.count) warnings") {
                     VStack(alignment: .leading, spacing: 3) {
-                        ForEach(Array(w.enumerated()), id: \.offset) { _, msg in
+                        ForEach(Array(r.warnings.enumerated()), id: \.offset) { _, msg in
                             Text("• \(msg)").font(.caption).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -245,17 +248,6 @@ struct ImportView: View {
                     .padding(.top, 4)
                 }
                 .font(.callout)
-            }
-            if let e = r.errors, !e.isEmpty {
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(Array(e.enumerated()), id: \.offset) { _, msg in
-                        Label(msg, systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(.orange)
-                    }
-                }
-            }
-            if let err = r.error {
-                Text(err).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
         }
         .padding(16)
@@ -320,27 +312,35 @@ struct ImportView: View {
     private func runImport(clearFirst: Bool) async {
         guard let preview else { return }
         result = nil
+        parseError = nil
+        let projectPath = state.projectPath
+        let json = preview.rawJSON
+
         do {
             if clearFirst {
                 working = "Backing up and clearing…"
-                let cleared = try await state.api.clearContainer()
-                if cleared.success != true {
-                    parseError = cleared.error ?? "Clear failed"
-                    working = nil
-                    return
-                }
-                clearInfo = cleared
+                clearInfo = try await Task.detached {
+                    try NativeImporter.clear(projectPath: projectPath)
+                }.value
             }
-            working = "Importing…"
-            let r = try await state.api.importGTM(json: preview.rawJSON)
-            result = r
+
+            // Parse and generate off the main actor: JavaScriptCore holds the
+            // thread it runs on, and a 300-tag container is enough work to
+            // stutter the window if that thread is the UI's.
+            working = "Converting…"
+            let plan = try await Task.detached {
+                try NativeImporter.plan(gtmJSON: json)
+            }.value
+
+            working = "Writing \(plan.files.count) files…"
+            let written = try await Task.detached {
+                try NativeImporter.write(plan, projectPath: projectPath)
+            }.value
+
+            result = plan
             working = nil
             await state.refresh()
-            if r.success == true {
-                let n = (r.imported?.tags ?? 0) + (r.imported?.triggers ?? 0)
-                    + (r.imported?.variables ?? 0)
-                state.showToast("Imported \(n) assets")
-            }
+            state.showToast("Imported \(written) assets")
         } catch {
             parseError = error.localizedDescription
             working = nil

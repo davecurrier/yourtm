@@ -52,9 +52,16 @@ enum NativeProjectReader {
     export const defineVisibilityTrigger = typed('visibility');
     export const defineFormSubmitTrigger = typed('formSubmit');
     export const defineHistoryChangeTrigger = typed('historyChange');
-    export const defineDataLayerEventTrigger = typed('customEvent');
-    export const defineCustomEventTrigger = typed('customEvent');
+    // 'custom', not 'customEvent'. The runtime dispatches on this string and
+    // has only ever had a `custom` handler, so every dataLayer-event trigger an
+    // import produced landed on handlers[undefined] and quietly never
+    // registered — all eight of them in the reference container.
+    export const defineDataLayerEventTrigger = typed('custom');
+    export const defineCustomEventTrigger = typed('custom');
     export const defineInitTrigger = typed('init');
+    export const defineConsentInitTrigger = typed('consentInit');
+    export const defineDOMReadyTrigger = typed('domReady');
+    export const defineWindowLoadTrigger = typed('windowLoad');
     export const defineYouTubeVideoTrigger = typed('youtube');
     export const defineCustomTrigger = typed('custom');
 

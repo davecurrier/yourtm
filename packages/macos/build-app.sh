@@ -23,11 +23,12 @@ cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 # Engine resources: the bundled esbuild binary and the JavaScriptCore runtime.
 # Together these are what let the app compile containers and edit TypeScript
 # sources without Node installed. Regenerate if either is missing.
-if [ ! -f Sources/YourTM/Resources/ytm-script-runtime.js ] || [ ! -f Sources/YourTM/Resources/ytm-runtime.mjs ] || [ ! -x Sources/YourTM/Resources/esbuild ]; then
+if [ ! -f Sources/YourTM/Resources/ytm-script-runtime.js ] || [ ! -f Sources/YourTM/Resources/ytm-gtm-import.js ] || [ ! -f Sources/YourTM/Resources/ytm-runtime.mjs ] || [ ! -x Sources/YourTM/Resources/esbuild ]; then
   echo "→ building JS runtime resources"
   ./scripts/build-js-runtime.sh
 fi
 cp Sources/YourTM/Resources/ytm-script-runtime.js "$APP/Contents/Resources/"
+cp Sources/YourTM/Resources/ytm-gtm-import.js "$APP/Contents/Resources/"
 cp Sources/YourTM/Resources/ytm-runtime.mjs "$APP/Contents/Resources/"
 cp Sources/YourTM/Resources/esbuild "$APP/Contents/Resources/esbuild"
 chmod +x "$APP/Contents/Resources/esbuild"

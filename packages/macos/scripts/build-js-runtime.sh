@@ -29,6 +29,22 @@ echo "→ bundling ts-morph for JavaScriptCore"
   --outfile="$OUT/ytm-script-runtime.js" \
   --log-level=warning
 
+# GTM importer. Separate from the ts-morph bundle so importing does not drag in
+# the TypeScript compiler, and so a failure in one cannot break the other.
+echo "→ bundling the GTM importer"
+IMPORT_ENTRY="$DESKTOP/.ytm-gtm-entry.ts"
+cp "$HERE/js/gtm-import.ts" "$IMPORT_ENTRY"
+# Alias straight at the vendor detectors rather than the package barrel: the
+# barrel re-exports the CLI itself, which pulls in commander, chalk and node:fs
+# and cannot bundle for a browser-like target.
+"$ESBUILD" "$IMPORT_ENTRY" \
+  --bundle --format=iife --platform=browser \
+  --alias:@yourtm/cli="$REPO/packages/cli/src/vendors/index.ts" \
+  --define:process.env.NODE_ENV='"production"' \
+  --outfile="$OUT/ytm-gtm-import.js" \
+  --log-level=warning
+rm -f "$IMPORT_ENTRY"
+
 # @yourtm/runtime, pre-bundled to one self-contained ESM file.
 #
 # A compiled container's entry point imports initYourTM from the runtime, so the
@@ -47,4 +63,4 @@ echo "→ bundling @yourtm/runtime"
 cp "$ESBUILD" "$OUT/esbuild"
 chmod +x "$OUT/esbuild"
 
-echo "✓ $(cd "$OUT" && ls -lh ytm-script-runtime.js ytm-runtime.mjs esbuild | awk '{print $9" "$5}' | tr '\n' ' ')"
+echo "✓ $(cd "$OUT" && ls -lh ytm-script-runtime.js ytm-gtm-import.js ytm-runtime.mjs esbuild | awk '{print $9" "$5}' | tr '\n' ' ')"
