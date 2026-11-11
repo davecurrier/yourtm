@@ -486,11 +486,16 @@ enum NativeBuilder {
     ) async throws -> Bundle {
         guard !projectPath.isEmpty else { throw BuildError.noProject }
 
-        // Preview builds only (the local dev server): tell the runtime to beacon
-        // every tag execution to the app. Deployed builds never carry this, and
-        // with it absent the entry stays byte-identical to the engine's.
+        let config = (try? await loadConfig(projectPath: projectPath)) ?? [:]
+
+        // Where the runtime beacons each tag execution. Preview builds (the
+        // local dev server) send to the app; a deployed build sends only when
+        // the container opts in with `telemetry: { endpoint }`, e.g. a site
+        // whose own worker collects real-user telemetry at /_ytm/telemetry.
+        let telemetryEndpoint = previewEndpoint
+            ?? ((config["telemetry"] as? [String: Any])?["endpoint"] as? String)
         var previewLines = ""
-        if let endpoint = previewEndpoint,
+        if let endpoint = telemetryEndpoint,
            let data = try? JSONSerialization.data(withJSONObject: [endpoint], options: [.withoutEscapingSlashes]),
            let quoted = String(data: data, encoding: .utf8)?.dropFirst().dropLast() {
             previewLines = "\n  previewMode: true,\n  previewEndpoint: \(quoted),"
@@ -502,7 +507,6 @@ enum NativeBuilder {
         // Opt-in: emitted only when the container declares consentMode, so no
         // container silently starts sending Google consent signals it did not
         // ask for. The value is a legal posture, not a technical default.
-        let config = (try? await loadConfig(projectPath: projectPath)) ?? [:]
         var consentModeLine = ""
         if let cm = config["consentMode"] as? [String: Any],
            let data = try? JSONSerialization.data(withJSONObject: cm, options: [.sortedKeys]),

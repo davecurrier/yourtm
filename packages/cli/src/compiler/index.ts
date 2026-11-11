@@ -592,14 +592,17 @@ const defineConfig = (config) => config;
     // We point to the actual source file in the workspace
     const runtimeSrcPath = this.resolveRuntimeSource();
 
+    // Preview (ytm dev) wins; otherwise a container may opt deployed builds in.
+    const telemetryEndpoint = this.config.previewEndpoint ?? this.config.telemetry?.endpoint;
+
     const entryCode = `
 import { initYourTM } from '${runtimeSrcPath}';
 
 const config = {
   containerId: '${this.config.containerId}',
-  debug: ${!!this.config.debug},${this.config.previewEndpoint ? `
+  debug: ${!!this.config.debug},${telemetryEndpoint ? `
   previewMode: true,
-  previewEndpoint: ${JSON.stringify(this.config.previewEndpoint)},` : ''}
+  previewEndpoint: ${JSON.stringify(telemetryEndpoint)},` : ''}
   triggers: ${triggersJson},
   variables: ${variablesJson}
 };

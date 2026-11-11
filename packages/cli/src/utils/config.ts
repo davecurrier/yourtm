@@ -12,6 +12,13 @@ export interface YourTMConfig {
    * mode, beaconing every tag execution to this URL. Deploy builds omit it.
    */
   previewEndpoint?: string;
+
+  /**
+   * Opt-in real-user telemetry for deployed builds: the runtime beacons each
+   * tag execution to this URL (e.g. '/_ytm/telemetry' on a site whose worker
+   * collects it). Preview builds use previewEndpoint instead.
+   */
+  telemetry?: { endpoint?: string };
   // Container identification
   containerId: string;
   containerName?: string;
