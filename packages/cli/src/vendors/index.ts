@@ -4,7 +4,7 @@
  * Detects known vendors from GTM tag types and generates proper YTM implementations.
  */
 
-import { slugify } from '../templates/utils.js';
+import { slugify } from '../utils/slug.js';
 
 export interface VendorTagResult {
   vendor: string;
@@ -64,7 +64,7 @@ function detectFromCustomTemplate(tag: GTMTag): VendorTagResult | null {
         consent: ['marketing'],
         code: `
     if (!window.lintrk) return;
-    window.lintrk('track', { conversion_id: '${eventId}' });`
+    window.lintrk('track', { conversion_id: ${jsString(eventId)} });`
       };
     }
 
@@ -78,7 +78,7 @@ function detectFromCustomTemplate(tag: GTMTag): VendorTagResult | null {
     if (window.lintrk) return;
 
     window._linkedin_data_partner_ids = window._linkedin_data_partner_ids || [];
-    window._linkedin_data_partner_ids.push('${partnerId}');
+    window._linkedin_data_partner_ids.push(${jsString(partnerId)});
 
     const script = document.createElement('script');
     script.src = 'https://snap.licdn.com/li.lms-analytics/insight.min.js';
@@ -102,6 +102,35 @@ function getParam(tag: GTMTag, key: string): string | undefined {
  */
 function getParamList(tag: GTMTag, key: string): any[] | undefined {
   return tag.parameter?.find(p => p.key === key)?.list;
+}
+
+/**
+ * Render GTM param values as one JavaScript string *expression*.
+ *
+ * GTM parameters routinely hold `{{Variable}}` references — agency containers
+ * keep conversion IDs and pixel IDs in variables rather than inline. Dropping
+ * one into a quoted literal produces `'{{Conversion ID}}/label'`, and the
+ * import's later reference rewrite turns that into
+ * `'ctx.variables['conversion-id']/label'` — a syntax error, in a file that
+ * still parses as TypeScript, so nothing catches it until the tag runs.
+ *
+ * Anything containing a reference becomes a template literal instead. Fully
+ * static values stay a plain quoted string, so the common case reads the way a
+ * person would have written it.
+ */
+function jsString(...parts: Array<string | undefined>): string {
+  const joined = parts.map(p => p ?? '').join('');
+  if (!/\{\{[^}]+\}\}/.test(joined)) {
+    return `'${joined.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  }
+  // Escape before substituting: the `${` we insert below is deliberate and
+  // must survive, and `{{Name}}` contains nothing the escapes would touch.
+  const body = joined
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${')
+    .replace(/\{\{([^}]+)\}\}/g, (_m, name) => `\${ctx.variables['${slugify(name.trim())}']}`);
+  return `\`${body}\``;
 }
 
 // =============================================================================
@@ -135,13 +164,13 @@ const VENDOR_DETECTORS: Record<string, (tag: GTMTag) => VendorTagResult> = {
     if (window.gtag) return;
 
     const script = document.createElement('script');
-    script.src = 'https://www.googletagmanager.com/gtag/js?id=${measurementId}';
+    script.src = ${jsString('https://www.googletagmanager.com/gtag/js?id=', measurementId)};
     script.async = true;
     script.onload = () => {
       window.dataLayer = window.dataLayer || [];
       window.gtag = function() { dataLayer.push(arguments); };
       gtag('js', new Date());
-      gtag('config', '${measurementId}', {
+      gtag('config', ${jsString(measurementId)}, {
         send_page_view: ${sendPageView}${fieldCode}
       });
     };
@@ -182,14 +211,13 @@ const VENDOR_DETECTORS: Record<string, (tag: GTMTag) => VendorTagResult> = {
     if (window.gtag) return;
 
     const script = document.createElement('script');
-    script.src = 'https://www.googletagmanager.com/gtag/js?id=${tagId}';
+    script.src = ${jsString('https://www.googletagmanager.com/gtag/js?id=', tagId)};
     script.async = true;
     script.onload = () => {
       window.dataLayer = window.dataLayer || [];
       window.gtag = function() { dataLayer.push(arguments); };
       gtag('js', new Date());
-      gtag('config', '${tagId}'${configCode ? `, {
-${configCode}
+      gtag('config', ${jsString(tagId)}${configCode ? `, {${configCode}
       }` : ''});
     };
     document.head.appendChild(script);`
@@ -223,7 +251,7 @@ ${configCode}
       consent: ['analytics'],
       code: `
     if (!window.gtag) return;
-    gtag('event', '${eventName}'${paramCode});`
+    gtag('event', ${jsString(eventName)}${paramCode});`
     };
   },
 
@@ -245,7 +273,7 @@ ${configCode}
     t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
     document,'script','https://connect.facebook.net/en_US/fbevents.js');
 
-    fbq('init', '${pixelId}');
+    fbq('init', ${jsString(pixelId)});
     fbq('track', 'PageView');`
     };
   },
@@ -276,7 +304,7 @@ ${configCode}
       consent: ['marketing'],
       code: `
     if (!window.fbq) return;
-    fbq('track', '${eventName}'${paramCode});`
+    fbq('track', ${jsString(eventName)}${paramCode});`
     };
   },
 
@@ -293,7 +321,7 @@ ${configCode}
     if (window.lintrk) return;
 
     window._linkedin_data_partner_ids = window._linkedin_data_partner_ids || [];
-    window._linkedin_data_partner_ids.push('${partnerId}');
+    window._linkedin_data_partner_ids.push(${jsString(partnerId)});
 
     const script = document.createElement('script');
     script.src = 'https://snap.licdn.com/li.lms-analytics/insight.min.js';
@@ -317,7 +345,7 @@ ${configCode}
         consent: ['marketing'],
         code: `
     if (!window.uetq) return;
-    window.uetq.push('event', '${customEventAction}', {});`
+    window.uetq.push('event', ${jsString(customEventAction)}, {});`
       };
     }
 
@@ -336,7 +364,7 @@ ${configCode}
     script.src = 'https://bat.bing.com/bat.js';
     script.async = true;
     script.onload = () => {
-      window.uetq.push('config', '${tagId}', { ti: '${tagId}' });
+      window.uetq.push('config', ${jsString(tagId)}, { ti: ${jsString(tagId)} });
     };
     document.head.appendChild(script);`
     };
@@ -357,9 +385,9 @@ ${configCode}
       code: `
     if (!window.gtag) return;
     gtag('event', 'conversion', {
-      send_to: '${conversionId}/${conversionLabel}'${value ? `,
+      send_to: ${jsString(conversionId, '/', conversionLabel)}${value ? `,
       value: ${value},
-      currency: '${currency}'` : ''}
+      currency: ${jsString(currency)}` : ''}
     });`
     };
   },
@@ -375,7 +403,7 @@ ${configCode}
       consent: ['marketing'],
       code: `
     if (!window.gtag) return;
-    gtag('config', '${conversionId}');`
+    gtag('config', ${jsString(conversionId)});`
     };
   },
 
@@ -413,7 +441,7 @@ ${configCode}
       consent: ['analytics', 'marketing'],
       code: `
     const script = document.createElement('script');
-    script.src = '//js.hs-scripts.com/${portalId}.js';
+    script.src = ${jsString('//js.hs-scripts.com/', portalId, '.js')};
     script.async = true;
     document.head.appendChild(script);`
     };
@@ -441,7 +469,7 @@ ${configCode}
     ttq._o=ttq._o||{};ttq._o[e]=n||{};var o=document.createElement("script");
     o.type="text/javascript";o.async=!0;o.src=i+"?sdkid="+e+"&lib="+t;
     var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
-    ttq.load('${pixelId}');ttq.page()}(window,document,'ttq');`
+    ttq.load(${jsString(pixelId)});ttq.page()}(window,document,'ttq');`
     };
   },
 
@@ -462,7 +490,7 @@ ${configCode}
     t.async=!0,t.src=e;var r=document.getElementsByTagName("script")[0];
     r.parentNode.insertBefore(t,r)}}("https://s.pinimg.com/ct/core.js");
 
-    pintrk('load', '${tagId}');
+    pintrk('load', ${jsString(tagId)});
     pintrk('page');`
     };
   },
@@ -484,7 +512,7 @@ ${configCode}
     r.src=n;var u=t.getElementsByTagName(s)[0];
     u.parentNode.insertBefore(r,u);})(window,document,'https://sc-static.net/scevent.min.js');
 
-    snaptr('init', '${pixelId}');
+    snaptr('init', ${jsString(pixelId)});
     snaptr('track', 'PAGE_VIEW');`
     };
   },
