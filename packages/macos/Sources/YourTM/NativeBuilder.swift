@@ -530,7 +530,7 @@ enum NativeBuilder {
               if (typeof v[k] === 'string' && v[k].startsWith('__FUNC_')) {
                 const fnStr = v[k].substring(7, v[k].length - 2);
                 try {
-                  v[k] = eval('(' + fnStr + ')');
+                  v[k] = (0, eval)('(' + fnStr + ')');
                 } catch(e) {
                   console.error('[YTM] Failed to revive function', k, e);
                 }

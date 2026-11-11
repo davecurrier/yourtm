@@ -137,16 +137,14 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         { label: 'Local', value: localUrl },
         { label: 'Container', value: config.containerId },
         { label: 'Mode', value: 'development + preview' },
+        { label: 'Test page', value: `${localUrl}/_ytm/test` },
       ];
       logger.table(tableRows);
       logger.newline();
 
       logger.info('Snippet to add to your HTML:');
       logger.newline();
-      // Core first, then every zone/tag bundle this build actually produced.
-      const names = bundles.map(b => b.name).filter(n => n.endsWith('.js'))
-        .sort((a, b) => (a === 'core.js' ? -1 : b === 'core.js' ? 1 : a.localeCompare(b)));
-      for (const name of names) {
+      for (const name of bundleOrder(bundles)) {
         console.log(logger.chalk.gray('  <script src="' + localUrl + '/' + name + '" defer></script>'));
       }
       logger.newline();
@@ -185,6 +183,12 @@ async function buildAndReport(compiler: Compiler): Promise<CompiledBundle[]> {
   });
 
   return result.bundles;
+}
+
+/** Core first, then every zone/tag bundle this build actually produced. */
+function bundleOrder(bundles: CompiledBundle[]): string[] {
+  return bundles.map(b => b.name).filter(n => n.endsWith('.js'))
+    .sort((a, b) => (a === 'core.js' ? -1 : b === 'core.js' ? 1 : a.localeCompare(b)));
 }
 
 function handleRequest(
@@ -260,6 +264,21 @@ function handleRequest(
       res.end(jsBundle.map);
       return;
     }
+  }
+
+  // A blank page that loads every bundle, so preview works without wiring
+  // the snippet into a site first.
+  if (pathname === '/_ytm/test') {
+    const scripts = bundleOrder(bundles)
+      .map(name => `<script src="/${name}" defer></script>`).join('\n  ');
+    res.setHeader('Content-Type', 'text/html');
+    res.writeHead(200);
+    res.end(`<!doctype html><html><head><meta charset="utf-8"><title>YourTM test page - ${config.containerId}</title>
+  ${scripts}
+</head><body style="font:15px -apple-system,sans-serif;margin:48px">
+<h1>YourTM test page</h1><p>Container <code>${config.containerId}</code>. Tag events appear in the terminal running <code>ytm dev</code>.</p>
+</body></html>`);
+    return;
   }
 
   // Serve index page
