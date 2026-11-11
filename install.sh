@@ -13,7 +13,7 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-GITHUB_REPO="davecurrier/yourtm-cli"
+GITHUB_REPO="davecurrier/yourtm"
 INSTALL_DIR="$HOME/.yourtm"
 
 print_banner() {
