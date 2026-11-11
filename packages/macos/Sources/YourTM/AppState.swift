@@ -3,7 +3,10 @@ import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
-    let api = APIClient()
+    /// Receives preview beacons on localhost:3344 for the whole app session.
+    let telemetry = TelemetryHub()
+    /// Serves preview builds on localhost:3456 when started from Preview.
+    let devServer = DevServer()
 
     @Published var project = ProjectData()
     @Published var settings = AppSettings()
@@ -18,51 +21,30 @@ final class AppState: ObservableObject {
         !(settings.cloudflare?.accountId ?? "").isEmpty && !(settings.cloudflare?.apiToken ?? "").isEmpty
     }
 
-    /// Reload settings and the container.
-    ///
-    /// Settings still come from the engine; the container is read natively —
-    /// esbuild bundles the sources and JavaScriptCore evaluates them, taking
-    /// the app's primary data path off Node. Verified against the engine on the
-    /// reference container: every field the engine reports is identical, and
-    /// native additionally reports `sourcePath` for triggers, variables and
-    /// zones, which the engine omits.
-    ///
-    /// The engine remains a fallback while the port is in progress, so a
-    /// regression in the native reader degrades rather than blanks the app. The
-    /// failure is surfaced, not swallowed.
+    /// Reload settings and the container, both natively: settings from
+    /// `~/.yourtm/config.json`, the container by bundling its sources with
+    /// esbuild and evaluating them in JavaScriptCore.
     func refresh() async {
         isLoading = true
         defer { isLoading = false }
 
-        // Settings must land first: the project path comes from them, and on a
-        // cold launch it is still empty. Reading concurrently would send "" to
-        // the reader and fall back to the engine on every first refresh.
-        if let s = NativeSettings.load() {
-            settings = s
-        } else if let s = try? await api.settings() {
-            settings = s
-        }
+        // Settings first: the project path comes from them.
+        settings = NativeSettings.load() ?? AppSettings()
 
+        guard !projectPath.isEmpty else {
+            project = ProjectData()
+            lastError = "No project is open. Choose one in Settings."
+            return
+        }
         do {
             project = try await NativeProjectReader.read(projectPath: projectPath)
             lastError = nil
         } catch {
-            if let fallback = try? await api.project() {
-                project = fallback
-                lastError = "Native read failed, using the engine: \(error.localizedDescription)"
-            } else {
-                lastError = error.localizedDescription
-            }
+            lastError = error.localizedDescription
         }
     }
 
     /// Write an asset's source natively, via ts-morph in JavaScriptCore.
-    ///
-    /// Swift is the *sole* writer on purpose. The engine's `updateAssetProperties`
-    /// edits through a cached ts-morph Project, so if both wrote, an engine-side
-    /// edit would silently revert a Swift one from its stale in-memory copy.
-    /// Reads stay on the engine, which recompiles from disk on every refresh and
-    /// therefore sees these writes immediately.
     ///
     /// Verified byte-identical to the engine's output across all 21 tags in the
     /// reference container before this was switched over.

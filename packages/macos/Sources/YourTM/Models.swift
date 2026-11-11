@@ -288,7 +288,7 @@ enum TelemetrySource: String, CaseIterable, Identifiable {
     var title: String { self == .local ? "This Mac" : "Worker (live site)" }
     var help: String {
         self == .local
-            ? "Streams from the local engine — for pages that can reach localhost."
+            ? "Streams from this app (localhost:3344) — for pages that can reach localhost."
             : "Polls the deployed Cloudflare Worker — for a hosted site like dev.yoursite.com."
     }
 }

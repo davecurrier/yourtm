@@ -158,7 +158,7 @@ struct DeployView: View {
     // MARK: Actions
 
     private func load() async {
-        deployment = try? await state.api.deploymentInfo()
+        deployment = NativeSettings.deploymentInfo(projectPath: state.projectPath)
         // RUM state is a local record, not something to ask the engine for.
         if let d = NativeSettings.deployment(projectPath: state.projectPath) {
             rum = RUMStatus(success: true,
@@ -168,7 +168,8 @@ struct DeployView: View {
                             workerUrl: d["workerUrl"] as? String,
                             error: nil)
         } else {
-            rum = try? await state.api.rumStatus()
+            // No deployment record yet, so nothing has RUM switched on.
+            rum = RUMStatus(success: true, enabled: false, sampleRate: 0, workerUrl: nil, error: nil)
         }
     }
 

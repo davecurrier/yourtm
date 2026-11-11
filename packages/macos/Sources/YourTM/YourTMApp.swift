@@ -3,22 +3,21 @@ import SwiftUI
 @main
 struct YourTMApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var backend = BackendManager()
     @StateObject private var state = AppState()
 
     var body: some Scene {
         WindowGroup("YourTM") {
             RootView()
-                .environmentObject(backend)
                 .environmentObject(state)
                 .frame(minWidth: 980, minHeight: 640)
                 .task {
-                    await backend.start()
-                    if case .running = backend.state {
-                        await state.refresh()
-                    }
+                    // Everything is native: no engine to wait for. The
+                    // telemetry receiver runs for the whole session so beacons
+                    // are caught even before Preview is opened.
+                    state.telemetry.start()
+                    await state.refresh()
                     AppDelegate.shared = appDelegate
-                    appDelegate.backend = backend
+                    appDelegate.state = state
                 }
         }
         .commands {
@@ -41,10 +40,10 @@ struct YourTMApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static var shared: AppDelegate?
-    var backend: BackendManager?
+    weak var state: AppState?
 
     func applicationWillTerminate(_ notification: Notification) {
-        backend?.stop()
+        MainActor.assumeIsolated { state?.devServer.stop() }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -53,38 +52,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 struct RootView: View {
-    @EnvironmentObject var backend: BackendManager
     @EnvironmentObject var state: AppState
     @State private var selection: SidebarItem? = .dashboard
 
     var body: some View {
-        Group {
-            switch backend.state {
-            case .starting:
-                VStack(spacing: 14) {
-                    ProgressView()
-                    Text("Starting YourTM engine…")
-                        .foregroundStyle(.secondary)
-                }
-            case .failed(let message):
-                VStack(spacing: 14) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 36))
-                        .foregroundStyle(.orange)
-                    Text("Engine failed to start").font(.headline)
-                    Text(message)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 460)
-                    Button("Retry") { Task { await backend.start(); await state.refresh() } }
-                        .keyboardShortcut(.defaultAction)
-                }
-                .padding()
-            case .running:
-                mainInterface
-            }
-        }
+        mainInterface
         .overlay(alignment: .bottom) {
             if let toast = state.toast {
                 Text(toast)

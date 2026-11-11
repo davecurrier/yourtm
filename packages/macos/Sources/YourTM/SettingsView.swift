@@ -113,14 +113,17 @@ struct SettingsView: View {
         defer { saving = false }
 
         if projectPath != state.projectPath, !projectPath.isEmpty {
-            _ = try? await state.api.setProject(path: projectPath)
+            do {
+                try NativeSettings.setProject(path: projectPath)
+            } catch {
+                state.lastError = error.localizedDescription
+                return
+            }
         }
 
-        var payload: [String: Any] = [:]
         var cloudflare: [String: Any] = [:]
         if !accountId.isEmpty { cloudflare["accountId"] = accountId }
         if !apiToken.isEmpty { cloudflare["apiToken"] = apiToken }
-        if !cloudflare.isEmpty { payload["cloudflare"] = cloudflare }
         var ai: [String: Any] = [:]
         // Auto-correct: an OpenAI-style key pasted into the Anthropic field
         if !anthropicKey.isEmpty && !anthropicKey.hasPrefix("sk-ant") && anthropicKey.hasPrefix("sk-") {
@@ -131,10 +134,12 @@ struct SettingsView: View {
         if !openaiKey.isEmpty { ai["openaiApiKey"] = openaiKey }
         if !ai.isEmpty {
             ai["provider"] = anthropicKey.isEmpty ? "openai" : "anthropic"
-            payload["ai"] = ai
         }
-        if !payload.isEmpty {
-            _ = try? await state.api.saveSettings(payload)
+        do {
+            try NativeSettings.save(cloudflare: cloudflare, ai: ai)
+        } catch {
+            state.lastError = "Could not save settings: \(error.localizedDescription)"
+            return
         }
 
         await state.refresh()

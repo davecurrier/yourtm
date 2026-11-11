@@ -231,9 +231,10 @@ struct PreviewView: View {
     }
 
     private func loadInitial() async {
-        devServer = try? await state.api.devServerStatus()
-        if source == .local, let recent = try? await state.api.recentTelemetry() {
-            ingest(recent)
+        devServer = state.devServer.status
+        if source == .local {
+            ingest(state.telemetry.events)
+            sourceError = state.telemetry.listenError
         }
         startStream()
     }
@@ -252,8 +253,9 @@ struct PreviewView: View {
                 return
             }
             workerReachable = await WorkerClient(baseURL: workerURL).health()
-        } else if let recent = try? await state.api.recentTelemetry() {
-            ingest(recent)
+        } else {
+            ingest(state.telemetry.events)
+            sourceError = state.telemetry.listenError
         }
         startStream()
     }
@@ -273,16 +275,12 @@ struct PreviewView: View {
         streamTask = source == .local ? localStreamTask() : workerPollTask()
     }
 
-    /// Local engine: true push via SSE.
+    /// This Mac: events pushed straight from the app's own receiver.
     private func localStreamTask() -> Task<Void, Never> {
         Task {
-            do {
-                for try await event in state.api.telemetryStream() {
-                    if Task.isCancelled { break }
-                    ingest([event])
-                }
-            } catch {
-                // stream ended (engine restarted, etc.)
+            for await event in state.telemetry.stream() {
+                if Task.isCancelled { break }
+                ingest([event])
             }
             streaming = false
         }
@@ -316,9 +314,14 @@ struct PreviewView: View {
     private func toggleDevServer() async {
         busy = true
         defer { busy = false }
-        let action = (devServer?.running == true) ? "stop" : "start"
-        _ = try? await state.api.devServer(action: action)
-        try? await Task.sleep(nanoseconds: 800_000_000)
-        devServer = try? await state.api.devServerStatus()
+        if state.devServer.running {
+            state.devServer.stop()
+        } else {
+            await state.devServer.start(projectPath: state.projectPath,
+                                        containerId: state.settings.project?.containerId ?? "")
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+        devServer = state.devServer.status
+        if let err = state.devServer.lastError { sourceError = err }
     }
 }

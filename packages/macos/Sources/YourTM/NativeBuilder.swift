@@ -446,10 +446,12 @@ enum NativeBuilder {
         projectPath: String,
         containerId: String,
         debug: Bool = false,
-        minify: Bool = true
+        minify: Bool = true,
+        previewEndpoint: String? = nil
     ) async throws -> [Bundle] {
         var bundles = [try await buildCore(projectPath: projectPath, containerId: containerId,
-                                           debug: debug, minify: minify)]
+                                           debug: debug, minify: minify,
+                                           previewEndpoint: previewEndpoint)]
         // core.js keeps its name whether or not it is minified; only the
         // standalone core.min.js artefact uses the other name.
         bundles[0].name = "core.js"
@@ -479,9 +481,20 @@ enum NativeBuilder {
         projectPath: String,
         containerId: String,
         debug: Bool = false,
-        minify: Bool = false
+        minify: Bool = false,
+        previewEndpoint: String? = nil
     ) async throws -> Bundle {
         guard !projectPath.isEmpty else { throw BuildError.noProject }
+
+        // Preview builds only (the local dev server): tell the runtime to beacon
+        // every tag execution to the app. Deployed builds never carry this, and
+        // with it absent the entry stays byte-identical to the engine's.
+        var previewLines = ""
+        if let endpoint = previewEndpoint,
+           let data = try? JSONSerialization.data(withJSONObject: [endpoint], options: [.withoutEscapingSlashes]),
+           let quoted = String(data: data, encoding: .utf8)?.dropFirst().dropLast() {
+            previewLines = "\n  previewMode: true,\n  previewEndpoint: \(quoted),"
+        }
 
         let runtimeSrc = try resolveRuntimeSource(projectPath: projectPath)
         let defs = try await definitionsJSON(projectPath: projectPath)
@@ -505,7 +518,7 @@ enum NativeBuilder {
 
         const config = {
           containerId: '\(containerId)',
-          debug: \(debug),\(consentModeLine)
+          debug: \(debug),\(consentModeLine)\(previewLines)
           triggers: \(defs.triggers),
           variables: \(defs.variables)
         };

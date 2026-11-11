@@ -66,18 +66,84 @@ enum NativeSettings {
 
     /// Merge keys into the project's deployment record, preserving the rest.
     static func updateDeployment(projectPath: String, _ updates: [String: Any]) {
-        guard !projectPath.isEmpty,
-              let data = try? Data(contentsOf: configURL),
-              var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        else { return }
-        var all = (root["deployments"] as? [String: Any]) ?? [:]
-        var entry = (all[projectPath] as? [String: Any]) ?? [:]
-        for (k, v) in updates { entry[k] = v }
-        all[projectPath] = entry
-        root["deployments"] = all
-        if let out = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted]) {
-            try? out.write(to: configURL, options: .atomic)
+        guard !projectPath.isEmpty else { return }
+        try? mutate { root in
+            var all = (root["deployments"] as? [String: Any]) ?? [:]
+            var entry = (all[projectPath] as? [String: Any]) ?? [:]
+            for (k, v) in updates { entry[k] = v }
+            all[projectPath] = entry
+            root["deployments"] = all
         }
+    }
+
+    /// The Deploy screen's summary of the last deployment, as the engine's
+    /// `GET /api/project/deployment` reported it.
+    static func deploymentInfo(projectPath: String) -> DeploymentInfo {
+        guard let d = deployment(projectPath: projectPath), d["workerName"] != nil || d["workerUrl"] != nil else {
+            return DeploymentInfo(deployed: false, message: "No deployment found for current project")
+        }
+        return DeploymentInfo(deployed: true,
+                              workerUrl: d["workerUrl"] as? String,
+                              workerName: d["workerName"] as? String,
+                              deployedAt: d["deployedAt"] as? String)
+    }
+
+    // MARK: Writing
+
+    enum SettingsError: LocalizedError {
+        case notAProject(String)
+        var errorDescription: String? {
+            switch self {
+            case .notAProject(let p): return "Not a YourTM project (no yourtm.config.ts): \(p)"
+            }
+        }
+    }
+
+    static func isValidProject(_ path: String) -> Bool {
+        FileManager.default.fileExists(atPath: (path as NSString).appendingPathComponent("yourtm.config.ts"))
+    }
+
+    /// Make `path` the current project and move it to the front of the recents
+    /// (ten kept), as `POST /api/settings/project` did.
+    static func setProject(path: String) throws {
+        let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
+        guard isValidProject(normalized) else { throw SettingsError.notAProject(normalized) }
+        try mutate { root in
+            root["currentProject"] = normalized
+            let recent = (root["recentProjects"] as? [String] ?? []).filter { $0 != normalized }
+            root["recentProjects"] = Array(([normalized] + recent).prefix(10))
+        }
+    }
+
+    /// Merge Cloudflare and AI credentials into the config, as
+    /// `POST /api/settings` did: given keys overwrite, empty values are
+    /// dropped, and every other key in the file is preserved.
+    static func save(cloudflare: [String: Any], ai: [String: Any]) throws {
+        try mutate { root in
+            for (section, updates) in [("cloudflare", cloudflare), ("ai", ai)] where !updates.isEmpty {
+                var merged = (root[section] as? [String: Any]) ?? [:]
+                for (k, v) in updates { merged[k] = v }
+                merged = merged.filter { !(($0.value as? String)?.isEmpty ?? false) }
+                root[section] = merged
+            }
+        }
+    }
+
+    /// Read-modify-write the whole config file. A missing file starts empty
+    /// rather than failing — first run, or a config the installer used to
+    /// delete — and the file is written 0600 because it holds API tokens.
+    static func mutate(_ change: (inout [String: Any]) -> Void) throws {
+        var root: [String: Any] = [:]
+        if let data = try? Data(contentsOf: configURL),
+           let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            root = parsed
+        }
+        change(&root)
+        let fm = FileManager.default
+        try fm.createDirectory(at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let out = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+        try out.write(to: configURL, options: .atomic)
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
     }
 
     /// Pull containerId / name out of `yourtm.config.ts`.
