@@ -49,8 +49,8 @@ export enum ConsentCategory {
   Marketing = 'marketing',
   /** Social media integrations */
   Social = 'social',
-  /** A/B testing and personalization */
-  Personalization = 'personalization',
+  /** Functional features: A/B testing, personalization, preferences */
+  Functional = 'functional',
 }
 
 /**
