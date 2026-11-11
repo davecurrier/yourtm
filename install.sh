@@ -15,6 +15,19 @@ NC='\033[0m'
 
 GITHUB_REPO="davecurrier/yourtm"
 INSTALL_DIR="$HOME/.yourtm"
+LOG="$INSTALL_DIR/install.log"
+APP_PATH=""
+
+# Run a build step with its output in $LOG, and show the tail if it fails
+# rather than exiting silently.
+run_logged() {
+  local label="$1"; shift
+  if ! "$@" >>"$LOG" 2>&1; then
+    echo -e "${RED}✗ ${label} failed.${NC} Last lines of $LOG:"
+    tail -n 25 "$LOG"
+    exit 1
+  fi
+}
 
 print_banner() {
   echo ""
@@ -60,18 +73,35 @@ check_requirements() {
 install_cli() {
   echo -e "${CYAN}Cloning repository...${NC}"
 
-  # Remove existing installation
-  rm -rf "$INSTALL_DIR"
+  # ~/.yourtm holds user data alongside the code: config.json (the app's
+  # settings, Cloudflare and WordPress credentials, deployment records),
+  # credentials.json and projects/. Never delete the directory; update the code
+  # in place and leave those alone.
+  local repo_url="${YTM_REPO_URL:-https://github.com/$GITHUB_REPO.git}"
+  if [[ -d "$INSTALL_DIR/.git" ]]; then
+    git -C "$INSTALL_DIR" remote set-url origin "$repo_url"
+    git -C "$INSTALL_DIR" fetch --depth 1 --quiet origin main
+    git -C "$INSTALL_DIR" reset --hard --quiet FETCH_HEAD
+    # -x also removes ignored build output; -e keeps user data.
+    git -C "$INSTALL_DIR" clean -fdxq \
+      -e /config.json -e /credentials.json -e /projects/ -e /bin/
+  else
+    local tmp
+    tmp="$(mktemp -d)"
+    git clone --depth 1 --quiet "$repo_url" "$tmp/yourtm"
+    mkdir -p "$INSTALL_DIR"
+    cp -R "$tmp/yourtm/." "$INSTALL_DIR/"
+    rm -rf "$tmp"
+  fi
 
-  # Clone the repo
-  git clone --depth 1 "https://github.com/$GITHUB_REPO.git" "$INSTALL_DIR" 2>/dev/null
+  cd "$INSTALL_DIR"
+  : > "$LOG"
 
   echo -e "${CYAN}Installing dependencies...${NC}"
-  cd "$INSTALL_DIR"
-  npm install --silent 2>/dev/null
+  run_logged "npm install" npm install --no-audit --no-fund
 
   echo -e "${CYAN}Building...${NC}"
-  npm run build --silent 2>/dev/null
+  run_logged "Build" npm run build
 
   # Create bin directory and symlink
   mkdir -p "$INSTALL_DIR/bin"
@@ -83,6 +113,48 @@ exec node "$HOME/.yourtm/packages/cli/dist/bin.js" "$@"
 WRAPPER
 
   chmod +x "$INSTALL_DIR/bin/ytm"
+}
+
+# The native Mac app. Optional: skipped off macOS, below macOS 14, without a
+# Swift toolchain, or with YTM_SKIP_APP=1, and a failed app build leaves the CLI
+# install in place.
+install_app() {
+  [[ "$(uname -s)" == "Darwin" ]] || return 0
+  if [[ "${YTM_SKIP_APP:-}" == "1" ]]; then
+    echo -e "${DIM}Skipping the Mac app (YTM_SKIP_APP=1)${NC}"
+    return 0
+  fi
+  local major
+  major="$(sw_vers -productVersion | cut -d. -f1)"
+  if (( major < 14 )); then
+    echo -e "${YELLOW}Skipping the Mac app: it needs macOS 14 or later.${NC}"
+    return 0
+  fi
+  if ! xcrun --find swift >/dev/null 2>&1; then
+    echo -e "${YELLOW}Skipping the Mac app: no Swift toolchain.${NC}"
+    echo -e "  Install it with ${CYAN}xcode-select --install${NC}, then re-run this installer."
+    return 0
+  fi
+
+  echo -e "${CYAN}Building the Mac app...${NC} ${DIM}(the first build takes a few minutes)${NC}"
+  if ! (cd "$INSTALL_DIR/packages/macos" && ./build-app.sh) >>"$LOG" 2>&1; then
+    echo -e "${YELLOW}The Mac app did not build; the CLI is installed. Details: $LOG${NC}"
+    return 0
+  fi
+
+  local dest="${YTM_APP_DIR:-/Applications}"
+  if [[ ! -w "$dest" ]]; then
+    dest="$HOME/Applications"
+    mkdir -p "$dest"
+  fi
+  if pgrep -xq YourTM; then
+    osascript -e 'quit app "YourTM"' >/dev/null 2>&1 || true
+    sleep 1
+  fi
+  rm -rf "$dest/YourTM.app"
+  ditto "$INSTALL_DIR/packages/macos/dist/YourTM.app" "$dest/YourTM.app"
+  APP_PATH="$dest/YourTM.app"
+  echo -e "  ${GREEN}✓${NC} Installed $APP_PATH"
 }
 
 setup_path() {
@@ -123,6 +195,9 @@ print_success() {
   echo -e "  ${CYAN}ytm --help${NC}       Show all commands"
   echo -e "  ${CYAN}ytm init${NC}         Create a new project"
   echo -e "  ${CYAN}ytm create tag${NC}   Create a tag from template"
+  if [[ -n "$APP_PATH" ]]; then
+    echo -e "  ${CYAN}ytm gui${NC}          Open the YourTM app ($APP_PATH)"
+  fi
   echo ""
   echo -e "${YELLOW}Restart your terminal or run:${NC}"
   echo -e "  ${CYAN}source ~/.zshrc${NC}  ${DIM}(or your shell config)${NC}"
@@ -140,6 +215,9 @@ main() {
   echo ""
 
   install_cli
+  echo ""
+
+  install_app
   echo ""
 
   echo -e "${CYAN}Configuring PATH...${NC}"
