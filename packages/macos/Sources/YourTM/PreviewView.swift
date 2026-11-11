@@ -200,7 +200,7 @@ struct PreviewView: View {
                 } description: {
                     Text(source == .local
                          ? "Load a page that beacons to this Mac.\nBrowsers block public HTTPS pages from reaching localhost — for a hosted site, switch to Worker."
-                         : "Polling the worker every 2s. Load a page on the site that includes the container script.\nZero events usually means the runtime isn't on the page yet.")
+                         : "Polling the worker every 5s. Load a page on the site that includes the container script.\nZero events usually means the runtime isn't on the page yet.")
                 }
             }
         }
@@ -287,10 +287,19 @@ struct PreviewView: View {
     }
 
     /// Worker: the Durable Object has no push channel, so poll it.
+    ///
+    /// Every poll is a billable Worker request (and, on a cache miss, a Durable
+    /// Object request), so this stays modest: every 5 s, matching the worker's
+    /// read cache, and not at all while no YourTM window is on screen. A window
+    /// visible behind the browser keeps polling, which is how this is used.
     private func workerPollTask() -> Task<Void, Never> {
         Task {
             let client = WorkerClient(baseURL: workerURL)
             while !Task.isCancelled {
+                if !NSApplication.shared.occlusionState.contains(.visible) {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    continue
+                }
                 do {
                     ingest(try await client.events())
                     workerReachable = true
@@ -299,7 +308,7 @@ struct PreviewView: View {
                     workerReachable = false
                     sourceError = error.localizedDescription
                 }
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
             }
             streaming = false
         }

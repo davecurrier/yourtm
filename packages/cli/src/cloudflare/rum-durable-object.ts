@@ -52,6 +52,13 @@ interface AggregateStats {
 // Maximum events to keep in memory
 const MAX_EVENTS = 1000;
 const MAX_LATENCIES_PER_TAG = 500;
+// Distinct tags tracked. Beacons come from the public internet, so without a
+// cap a stream of made-up tag IDs would grow memory and stored state forever.
+const MAX_TAGS = 200;
+// How long after a batch to write state. One write per window at most, so
+// under constant traffic this bounds storage writes to ~8,640/day (plus the
+// alarm itself), well inside the free plan's 100,000 rows written/day.
+const PERSIST_DELAY_MS = 10_000;
 
 /**
  * RUM Durable Object - one instance per container
@@ -236,7 +243,7 @@ export class RUMDurableObject {
 
       // Persist soon after every batch. Saving only every 10th event lost
       // the rest whenever an idle object was evicted, which on a quiet site
-      // is most of them. A short alarm coalesces bursts into one write.
+      // is most of them. The alarm coalesces each burst into one write.
       await this.schedulePersist();
 
       // Broadcast updated stats
@@ -269,6 +276,7 @@ export class RUMDurableObject {
     let stats = this.tagStats.get(key);
 
     if (!stats) {
+      if (this.tagStats.size >= MAX_TAGS) return;
       stats = {
         tagId: event.tagId,
         tagName: event.tagName || event.tagId,
@@ -383,7 +391,7 @@ export class RUMDurableObject {
   private async schedulePersist(): Promise<void> {
     const pending = await this.state.storage.getAlarm();
     if (pending === null) {
-      await this.state.storage.setAlarm(Date.now() + 2000);
+      await this.state.storage.setAlarm(Date.now() + PERSIST_DELAY_MS);
     }
   }
 
