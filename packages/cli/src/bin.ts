@@ -345,14 +345,9 @@ program
 // GUI command
 program
   .command('gui')
-  .description('Launch the desktop GUI')
-  .option('-p, --port <port>', 'Port for the dev server', '3344')
-  .option('--no-browser', 'Start dev server only (open in browser instead of Electron)')
-  .action(async (options) => {
-    await guiCommand({
-      port: parseInt(options.port, 10),
-      noBrowser: options.browser === false,
-    });
+  .description('Open the YourTM Mac app')
+  .action(async () => {
+    await guiCommand();
   });
 
 // Error handling

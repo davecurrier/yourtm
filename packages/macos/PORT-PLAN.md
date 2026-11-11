@@ -4,11 +4,27 @@ Working plan for making YourTM.app self-sufficient: no Node, no `next dev`, no
 `localhost:3344`. Written 2026-07-29 to be picked up in later sessions with no
 prior context.
 
-**Status: in progress.** Reading and editing are native; building is half done.
-Last updated 2026-07-30.
+**Status: engine retired (2026-11-11).** The app runs with no Node and no
+`localhost:3344` engine; `packages/desktop` is deleted (its history is in git
+up to `5ae3253`, and its pre-monorepo history is archived as
+`Tag/archive/desktop-engine-history.bundle`).
 
 | Phase | State |
 |---|---|
+| 1 — asset editing off Node | **done** |
+| 2 — compiler | **done** — core, zone and orphan bundles native; a Swift-built preview build fired all 27 global-zone tags in Chromium |
+| 3 — read-only / file routes | **done** — settings, project switching, deployment info native |
+| 4 — Cloudflare + deploy | **done** — deploy and RUM native (`NativeDeployer`); versions/rollback were never in the app |
+| 5 — WordPress + telemetry | **done** — WordPress native; telemetry receiver and dev server are `PreviewServer.swift` |
+| 5b — document packages | not started |
+| 6 — delete the engine | **done** |
+| 7 — hosted container | not started (the actual goal, §6b) |
+
+The sections below are the original plan, kept for the reasoning and the
+hard-won details; where they describe the engine as present, read them as
+history.
+
+---|---|
 | 1 — asset editing off Node | **done** — Swift is the sole writer |
 | 2 — compiler | **read done, core bundle done**; zone + default bundles remain |
 | 3 — read-only / file routes | settings done; the rest remain |

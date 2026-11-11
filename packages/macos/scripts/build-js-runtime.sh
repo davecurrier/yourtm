@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the JavaScript half of the engine into a single file the Mac app runs
+# Builds the app's JavaScript resources into a single file the Mac app runs
 # inside JavaScriptCore (a macOS system framework) — no Node at runtime.
 #
 # ts-morph carries the TypeScript compiler, which has no Swift equivalent, so
@@ -9,21 +9,24 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MACOS_PKG="$(dirname "$HERE")"
 REPO="$(cd "$MACOS_PKG/../.." && pwd)"
-DESKTOP="$REPO/packages/desktop"
 OUT="$MACOS_PKG/Sources/YourTM/Resources"
 
-ESBUILD="$REPO/node_modules/@esbuild/darwin-arm64/bin/esbuild"
-[ -x "$ESBUILD" ] || { echo "esbuild binary not found at $ESBUILD" >&2; exit 1; }
+# The host's own esbuild binary: npm installs only the platform package that
+# matches this Mac, so the app is built for the machine that builds it.
+case "$(uname -m)" in
+  arm64)  ESBUILD_PLATFORM="darwin-arm64" ;;
+  x86_64) ESBUILD_PLATFORM="darwin-x64" ;;
+  *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+ESBUILD="$REPO/node_modules/@esbuild/$ESBUILD_PLATFORM/bin/esbuild"
+[ -x "$ESBUILD" ] || { echo "esbuild binary not found at $ESBUILD (run npm install at the repo root)" >&2; exit 1; }
 
 mkdir -p "$OUT"
 
-# The entry must live inside the package so node_modules resolution works.
-ENTRY="$DESKTOP/.ytm-jsc-entry.mjs"
-cp "$HERE/js/asset-editor.mjs" "$ENTRY"
-trap 'rm -f "$ENTRY"' EXIT
-
+# Entries are bundled where they live. ts-morph is a dependency of this
+# package (packages/macos/package.json), so it resolves from here.
 echo "→ bundling ts-morph for JavaScriptCore"
-"$ESBUILD" "$ENTRY" \
+"$ESBUILD" "$HERE/js/asset-editor.mjs" \
   --bundle --format=iife --platform=browser \
   --define:process.env.NODE_ENV='"production"' \
   --outfile="$OUT/ytm-script-runtime.js" \
@@ -32,18 +35,15 @@ echo "→ bundling ts-morph for JavaScriptCore"
 # GTM importer. Separate from the ts-morph bundle so importing does not drag in
 # the TypeScript compiler, and so a failure in one cannot break the other.
 echo "→ bundling the GTM importer"
-IMPORT_ENTRY="$DESKTOP/.ytm-gtm-entry.ts"
-cp "$HERE/js/gtm-import.ts" "$IMPORT_ENTRY"
 # Alias straight at the vendor detectors rather than the package barrel: the
 # barrel re-exports the CLI itself, which pulls in commander, chalk and node:fs
 # and cannot bundle for a browser-like target.
-"$ESBUILD" "$IMPORT_ENTRY" \
+"$ESBUILD" "$HERE/js/gtm-import.ts" \
   --bundle --format=iife --platform=browser \
   --alias:@yourtm/cli="$REPO/packages/cli/src/vendors/index.ts" \
   --define:process.env.NODE_ENV='"production"' \
   --outfile="$OUT/ytm-gtm-import.js" \
   --log-level=warning
-rm -f "$IMPORT_ENTRY"
 
 # @yourtm/runtime, pre-bundled to one self-contained ESM file.
 #

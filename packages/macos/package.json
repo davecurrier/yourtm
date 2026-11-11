@@ -1,0 +1,13 @@
+{
+  "name": "@yourtm/macos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "YourTM native macOS app. Built with build-app.sh, not npm; this manifest only declares the JavaScript its bundled resources are made from.",
+  "scripts": {
+    "app": "./build-app.sh"
+  },
+  "dependencies": {
+    "@yourtm/cli": "*",
+    "ts-morph": "^27.0.2"
+  }
+}
