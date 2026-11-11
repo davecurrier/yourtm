@@ -11,7 +11,6 @@ import {
   type TelemetryEvent, 
   TelemetryEventType, 
   type TagExecutionTelemetry,
-  Environment 
 } from '@yourtm/core';
 
 interface DevOptions {
@@ -45,8 +44,12 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     const port = options.port || config.devServer?.port || 3456;
     const host = options.host || config.devServer?.host || 'localhost';
 
-    // Preview mode configuration
-    const previewEndpoint = options.previewEndpoint || `http://${host}:${port}/_ytm/telemetry`;
+    // Preview: the runtime beacons each tag execution to this server, which
+    // prints it here and forwards it to the YourTM app (if it is running) at
+    // --preview-endpoint. Built into the runtime config rather than injected:
+    // an injected bridge runs before the runtime exists and never registers.
+    const forwardTo = options.preview ? options.previewEndpoint : undefined;
+    config.previewEndpoint = `http://${host}:${port}/_ytm/telemetry`;
 
     // Initial build
     spinner.text = 'Building container...';
@@ -54,14 +57,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     let bundles = await buildAndReport(compiler);
 
     // Create HTTP server
-    const previewConfig = { 
-      previewMode: true, // Always enable for dev server
-      previewEndpoint,
-      environment: Environment.Development
-    };
-    
     const server = createServer((req, res) => {
-      handleRequest(req, res, config, bundles, previewConfig);
+      handleRequest(req, res, config, bundles, forwardTo);
     });
 
     // Create WebSocket server for hot reload and telemetry
@@ -146,8 +143,12 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 
       logger.info('Snippet to add to your HTML:');
       logger.newline();
-      console.log(logger.chalk.gray('  <script src="' + localUrl + '/core.js"></script>'));
-      console.log(logger.chalk.gray('  <script src="' + localUrl + '/tags.js"></script>'));
+      // Core first, then every zone/tag bundle this build actually produced.
+      const names = bundles.map(b => b.name).filter(n => n.endsWith('.js'))
+        .sort((a, b) => (a === 'core.js' ? -1 : b === 'core.js' ? 1 : a.localeCompare(b)));
+      for (const name of names) {
+        console.log(logger.chalk.gray('  <script src="' + localUrl + '/' + name + '" defer></script>'));
+      }
       logger.newline();
 
       printDashboard();
@@ -191,7 +192,7 @@ function handleRequest(
   res: ServerResponse,
   config: YourTMConfig,
   bundles: CompiledBundle[],
-  previewConfig: { previewMode: boolean; previewEndpoint: string; environment: Environment }
+  forwardTo?: string
 ): void {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
   const pathname = url.pathname;
@@ -200,6 +201,9 @@ function handleRequest(
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  // Chrome's Private/Local Network Access: lets a public HTTPS page reach this
+  // loopback server once the user allows it.
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -213,8 +217,14 @@ function handleRequest(
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const event = JSON.parse(body) as TelemetryEvent;
-        handleTelemetryEvent(event);
+        // sendBeacon posts text/plain, so parse regardless of content type.
+        const parsed = JSON.parse(body) as TelemetryEvent | TelemetryEvent[];
+        for (const event of Array.isArray(parsed) ? parsed : [parsed]) handleTelemetryEvent(event);
+        if (forwardTo) {
+          // Best effort: the app may not be open.
+          fetch(forwardTo, { method: 'POST', body, headers: { 'Content-Type': 'application/json' } })
+            .catch(() => {});
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok' }));
       } catch (e) {
@@ -235,36 +245,7 @@ function handleRequest(
     res.setHeader('Cache-Control', 'no-cache');
     res.writeHead(200);
 
-    // Inject preview config into core.js
-    let code = bundle.code;
-    if (filename === 'core.js') {
-      // Inject preview config and WebSocket bridge
-      const previewScript = `
-;(function(){
-  window.__YOURTM_PREVIEW__ = ${JSON.stringify(previewConfig)};
-  
-  // WebSocket Bridge for real-time telemetry
-  const ws = new WebSocket('ws://' + window.location.host);
-  const queue = [];
-  
-  ws.onopen = () => {
-    while(queue.length) ws.send(JSON.stringify(queue.shift()));
-  };
-  
-  if (window.YourTM) {
-    window.YourTM.onTelemetry(function(e) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(e));
-      } else {
-        queue.push(e);
-      }
-    });
-  }
-})();
-`;
-      code = previewScript + code;
-    }
-
+    const code = bundle.code;
     res.end(code);
     return;
   }

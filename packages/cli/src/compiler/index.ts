@@ -597,7 +597,9 @@ import { initYourTM } from '${runtimeSrcPath}';
 
 const config = {
   containerId: '${this.config.containerId}',
-  debug: ${!!this.config.debug},
+  debug: ${!!this.config.debug},${this.config.previewEndpoint ? `
+  previewMode: true,
+  previewEndpoint: ${JSON.stringify(this.config.previewEndpoint)},` : ''}
   triggers: ${triggersJson},
   variables: ${variablesJson}
 };

@@ -7,6 +7,11 @@ import { logger } from './logger.js';
 export interface YourTMConfig {
   /** Emit verbose runtime logging. Inlined into every compiled container. */
   debug?: boolean;
+  /**
+   * Set by `ytm dev`, never by a config file: build the runtime in preview
+   * mode, beaconing every tag execution to this URL. Deploy builds omit it.
+   */
+  previewEndpoint?: string;
   // Container identification
   containerId: string;
   containerName?: string;
