@@ -50,6 +50,28 @@ export function detectVendor(gtmTag: GTMTag): VendorTagResult | null {
  * Detect vendor from custom template parameters
  */
 function detectFromCustomTemplate(tag: GTMTag): VendorTagResult | null {
+  // Meta Pixel gallery template (facebookarchive) used for an event. The base
+  // pixel is installed by its own tag, so this only records the event, and
+  // targets this template's pixel with trackSingle* so other pixels on the
+  // page do not receive it.
+  const metaPixelId = getParam(tag, 'pixelId');
+  const metaEventKind = getParam(tag, 'eventName');
+  if (metaPixelId && metaEventKind) {
+    const custom = metaEventKind === 'custom';
+    const eventName = custom ? getParam(tag, 'customEventName') : getParam(tag, 'standardEventName');
+    if (eventName) {
+      return {
+        vendor: 'meta',
+        type: 'event',
+        description: `Meta ${custom ? 'Custom ' : ''}Event: ${eventName}`,
+        consent: ['marketing'],
+        code: `
+    if (!window.fbq) return;
+    window.fbq(${custom ? "'trackSingleCustom'" : "'trackSingle'"}, ${jsString(metaPixelId)}, ${jsString(eventName)});`
+      };
+    }
+  }
+
   // LinkedIn Insight Tag - has partnerId parameter
   const partnerId = getParam(tag, 'partnerId');
   if (partnerId) {
@@ -371,6 +393,27 @@ const VENDOR_DETECTORS: Record<string, (tag: GTMTag) => VendorTagResult> = {
   },
 
   // Google Ads Conversion
+  // Google Ads User-Provided Data Event: hands the hashed-or-raw user data
+  // object to gtag for enhanced conversions. The value is an object, so a
+  // {{Variable}} reference is passed through as-is, not stringified.
+  'awud': (tag) => {
+    const userData = getParam(tag, 'userDataVariable') || '';
+    const ref = userData.match(/^\{\{([^}]+)\}\}$/);
+    const expr = ref ? `ctx.variables['${slugify(ref[1].trim())}']` : 'undefined';
+
+    return {
+      vendor: 'google-ads',
+      type: 'event',
+      description: 'Google Ads User-Provided Data',
+      consent: ['marketing'],
+      code: `
+    if (!window.gtag) return;
+    const userData = ${expr};
+    if (!userData) return;
+    gtag('set', 'user_data', userData);`
+    };
+  },
+
   'awct': (tag) => {
     const conversionId = getParam(tag, 'conversionId') || '';
     const conversionLabel = getParam(tag, 'conversionLabel') || '';
