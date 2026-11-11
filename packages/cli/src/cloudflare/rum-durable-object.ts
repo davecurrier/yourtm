@@ -234,10 +234,10 @@ export class RUMDurableObject {
         });
       }
 
-      // Persist state periodically (every 10 events)
-      if (this.events.length % 10 === 0) {
-        await this.persistState();
-      }
+      // Persist soon after every batch. Saving only every 10th event lost
+      // the rest whenever an idle object was evicted, which on a quiet site
+      // is most of them. A short alarm coalesces bursts into one write.
+      await this.schedulePersist();
 
       // Broadcast updated stats
       this.broadcast({
@@ -378,6 +378,18 @@ export class RUMDurableObject {
         this.sessions.delete(ws);
       }
     }
+  }
+
+  private async schedulePersist(): Promise<void> {
+    const pending = await this.state.storage.getAlarm();
+    if (pending === null) {
+      await this.state.storage.setAlarm(Date.now() + 2000);
+    }
+  }
+
+  /** Alarm handler: write the buffered state. */
+  async alarm(): Promise<void> {
+    await this.persistState();
   }
 
   /**
