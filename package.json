@@ -10,7 +10,7 @@
     "example"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build -w @yourtm/core && npm run build -w @yourtm/runtime -w @yourtm/vendors -w @yourtm/testing -w @yourtm/cli -w desktop",
     "dev": "npm run dev --workspaces --if-present",
     "check": "npm run check --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
