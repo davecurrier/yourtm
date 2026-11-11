@@ -49,13 +49,13 @@ struct ImportView: View {
                 Task { await runImport(clearFirst: true) }
             }
         } message: {
-            Text("All \(currentAssetCount) existing assets will be removed and replaced by this GTM export. A full backup is saved to .yourtm-backups/ first.")
+            Text("All \(currentAssetCount) existing tags, triggers and variables will be removed and replaced by this GTM export. Zones are kept. A full backup is saved to .yourtm-backups/ first.")
         }
     }
 
     private var currentAssetCount: Int {
         state.project.tags.count + state.project.triggers.count
-            + state.project.variables.count + state.project.zones.count
+            + state.project.variables.count
     }
 
     // MARK: Header

@@ -334,7 +334,7 @@ function generateTag(gtmTag: any, triggerMap: Map<string, string>): string {
     // push an indented scaffold four spaces deeper than the HTML beside it.
     executeBody = `// Custom HTML Tag - Review and optimize manually
 const div = document.createElement('div');
-div.innerHTML = \`${convertGTMRefs(html.replace(/`/g, '\\`').replace(/\$\{/g, '\\${'), true)}\`;
+div.innerHTML = \`${convertGTMRefs(html.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${'), true)}\`;
 const scripts = div.querySelectorAll('script');
 scripts.forEach(script => {
   const newScript = document.createElement('script');

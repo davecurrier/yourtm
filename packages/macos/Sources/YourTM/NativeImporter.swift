@@ -97,10 +97,17 @@ enum NativeImporter {
         var backupPath: String
     }
 
-    /// Empty the container's asset directories, backing the whole tree up first.
+    /// Empty the asset directories an import repopulates, backing the whole
+    /// tree up first.
     ///
     /// Destructive and usually run mid-migration, so the backup is not optional
     /// and its path is returned for the UI to show.
+    ///
+    /// Zones are left alone. GTM has no zones, so an import never writes any:
+    /// clearing them deleted a container's hand-written zones with nothing to
+    /// replace them, and every tag silently fell back to the unzoned bundle.
+    static let clearedKinds: [AssetKind] = AssetKind.allCases.filter { $0 != .zones }
+
     static func clear(projectPath: String) throws -> Cleared {
         guard !projectPath.isEmpty else { throw ImportError.write("no project is open") }
         let fm = FileManager.default
@@ -112,7 +119,7 @@ enum NativeImporter {
 
         var counts: [AssetKind: Int] = [:]
         var sources: [AssetKind: [URL]] = [:]
-        for kind in AssetKind.allCases {
+        for kind in clearedKinds {
             let dir = yourtm.appendingPathComponent(kind.rawValue)
             let files = ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
                 .filter { $0.pathExtension == "ts" }

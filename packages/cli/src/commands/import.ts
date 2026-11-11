@@ -955,7 +955,7 @@ export default ${type}({
       const html = gtmTag.parameter?.find((p: any) => p.key === 'html')?.value || '';
       executeBody = `// Custom HTML Tag - Review and optimize manually
     const div = document.createElement('div');
-    div.innerHTML = \`${html.replace(/\`/g, '\\`').replace(/\$\{/g, '\\${')}\`;
+    div.innerHTML = \`${html.replace(/\\/g, '\\\\').replace(/\`/g, '\\`').replace(/\$\{/g, '\\${')}\`;
     const scripts = div.querySelectorAll('script');
     scripts.forEach(script => {
       const newScript = document.createElement('script');
