@@ -88,7 +88,10 @@ export async function monitorCommand(url: string | undefined, options: MonitorOp
 
   if (options.once) {
     const events = (await source.fetchEvents()).filter(keep);
-    console.log(renderOverview(source.label, mode, events, { width: process.stdout.columns || 100, height: Infinity, status: 'snapshot', intervalS }));
+    // A snapshot: every tag expanded, nothing interactive.
+    const all = new Set(byTag(events).map(r => r.name));
+    console.log(renderList(source.label, events, { selected: -1, expanded: all, scroll: 0, paused: false },
+      { width: process.stdout.columns || 100, height: Infinity, status: chalk.gray('snapshot ' + time(Date.now())), interactive: false, follow: false }).text);
     return;
   }
 
@@ -227,29 +230,23 @@ function byTag(events: TagEvent[]): TagRow[] {
     const s = summarize(list);
     return { name: list[list.length - 1].tagName, fires: s.executed, failed: s.failed, blocked: s.blocked,
              avg: s.avg, p95: s.p95, last: list[list.length - 1].timestamp };
-  }).sort((a, b) => b.fires + b.blocked - (a.fires + a.blocked));
+    // Ties by name, so rows do not swap places between refreshes.
+  }).sort((a, b) => (b.fires + b.blocked) - (a.fires + a.blocked) || a.name.localeCompare(b.name));
 }
 
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
 
-const ms = (v?: number) => (v === undefined ? '—' : v < 10 ? `${v.toFixed(1)}ms` : `${Math.round(v)}ms`);
-const time = (t: number) => new Date(t).toLocaleTimeString();
-const pct = (ok: number, n: number) => (n === 0 ? '—' : `${Math.round((ok / n) * 100)}%`);
+const ms = (v?: number) => (v === undefined ? '—' : v < 10 ? `${v.toFixed(1)} ms` : `${Math.round(v)} ms`);
+const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 const ANSI = /\x1b\[[0-9;]*m/g;
 const visible = (s: string) => s.replace(ANSI, '').length;
 
 function fit(s: string, width: number): string {
   if (visible(s) <= width) return s;
-  // Truncate on plain text to avoid cutting an escape sequence in half.
+  // Truncate on plain text so an escape sequence is never cut in half.
   return s.replace(ANSI, '').slice(0, Math.max(0, width - 1)) + '…';
-}
-
-function pad(s: string, n: number, right = false): string {
-  const len = visible(s);
-  if (len >= n) return fit(s, n);
-  return right ? ' '.repeat(n - len) + s : s + ' '.repeat(n - len);
 }
 
 function statusIcon(e: TagEvent): string {
@@ -261,50 +258,51 @@ function pagePath(e: TagEvent): string {
   try { return new URL(e.pageUrl).pathname; } catch { return e.pageUrl; }
 }
 
-function eventLine(e: TagEvent, width: number, withName = true): string {
+/** One event on one line, for --plain output. */
+function eventLine(e: TagEvent, width: number): string {
   const detail = e.status === 'error' ? chalk.red(e.error || 'error')
     : e.status === 'blocked' ? chalk.yellow('blocked')
     : chalk.gray(ms(e.latency));
   const where = [pagePath(e), e.region].filter(Boolean).join('  ');
   const data = compactData(e.data);
-  return fit(`${chalk.gray(time(e.timestamp))} ${statusIcon(e)} ${withName ? e.tagName + '  ' : ''}${detail}` +
+  return fit(`${chalk.gray(time(e.timestamp))} ${statusIcon(e)} ${e.tagName}  ${detail}` +
     `${where ? '  ' + chalk.gray(where) : ''}${data ? '  ' + chalk.cyan(data) : ''}`, width);
 }
 
-/** One line: gtag('config','G-…') → config("G-…"); {event:'x'} → event x; +script. */
+/** Commands that are bookkeeping, not something a tag "sent". */
+const QUIET_GTAG = new Set(['js']);
+
+/** One-line data summary for --plain: config("G-…") · +gtag/js… */
 function compactData(data?: TagData): string {
   if (!data) return '';
   const parts: string[] = [];
   for (const p of data.pushes ?? []) {
     if (Array.isArray(p) && typeof p[0] === 'string') {
-      const args = p.slice(1).map(a => (typeof a === 'string' ? JSON.stringify(a) : JSON.stringify(a) ?? String(a)));
-      parts.push(`${p[0]}(${args.join(', ')})`);
+      if (QUIET_GTAG.has(p[0])) continue;
+      parts.push(`${p[0]}(${p.slice(1).map(a => JSON.stringify(a)).join(', ')})`);
     } else if (p && typeof p === 'object' && 'event' in (p as object)) {
-      const { event, ...rest } = p as Record<string, unknown>;
-      const keys = Object.keys(rest);
-      parts.push(`event ${String(event)}${keys.length ? ` {${keys.slice(0, 4).join(', ')}${keys.length > 4 ? ', …' : ''}}` : ''}`);
-    } else {
-      parts.push(JSON.stringify(p));
+      parts.push(`event ${String((p as Record<string, unknown>).event)}`);
     }
   }
-  for (const src of data.scripts ?? []) parts.push(`+${src.replace(/^www\./, '')}`);
-  if (data.truncated) parts.push('…');
+  for (const src of data.scripts ?? []) parts.push(`+${shortSrc(src)}`);
   return parts.join(' · ');
 }
 
-/** A value on one line, for the readable card. */
+function shortSrc(src: string): string {
+  return src.replace(/^www\./, '');
+}
+
 function inline(v: unknown): string {
   if (v === '') return chalk.gray('(empty)');
+  if (v === null || v === undefined) return chalk.gray('—');
   if (typeof v === 'string') {
-    // ISO timestamps read better without the T/Z noise.
-    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v) ? v.replace('T', ' ').replace(/\.\d+Z$|Z$/, '') : v;
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? v.replace('T', ' ').replace(/\.\d+Z$|Z$/, '') : v;
   }
-  if (v === null || v === undefined) return chalk.gray(String(v));
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
 }
 
-/** Flatten an object to aligned "key  value" rows (nested keys dotted). */
+/** Flatten an object to [key, value] pairs, nested keys dotted. */
 function keyValues(obj: Record<string, unknown>, prefix = '', depth = 0): Array<[string, string]> {
   const rows: Array<[string, string]> = [];
   for (const [k, v] of Object.entries(obj)) {
@@ -315,230 +313,156 @@ function keyValues(obj: Record<string, unknown>, prefix = '', depth = 0): Array<
   return rows;
 }
 
-/** What a tag sent, as readable lines rather than raw JSON. */
-function readableData(data: TagData | undefined): string[] {
-  if (!data || (!data.pushes?.length && !data.scripts?.length)) {
-    return [chalk.gray('nothing pushed to the dataLayer and no scripts loaded')];
-  }
-  const out: string[] = [];
-  const kv = (rows: Array<[string, string]>, indent: string) => {
-    const w = Math.min(28, Math.max(...rows.map(([k]) => k.length)));
-    for (const [k, v] of rows) out.push(`${indent}${chalk.gray(k.padEnd(w))}  ${v}`);
-  };
-  for (const p of data.pushes ?? []) {
+const LABEL = 9;
+const MAX_PARAMS = 6;
+
+/** The quiet card under an expanded tag: what it sent, what it loaded, where. */
+function detailLines(events: TagEvent[], tagName: string): string[] {
+  const mine = events.filter(e => e.tagName === tagName);
+  const lines: string[] = [];
+  const row = (label: string, value: string) => lines.push(`${chalk.gray(label.padEnd(LABEL))}${value}`);
+
+  const withData = [...mine].reverse().find(e => e.data);
+  for (const p of withData?.data?.pushes ?? []) {
     if (Array.isArray(p) && typeof p[0] === 'string') {
-      // gtag('cmd', arg, {params})
-      const [cmd, ...args] = p as unknown[];
+      if (QUIET_GTAG.has(p[0])) continue;
+      const args = p.slice(1);
       const params = args.length && args[args.length - 1] && typeof args[args.length - 1] === 'object' && !Array.isArray(args[args.length - 1])
         ? (args.pop() as Record<string, unknown>) : undefined;
-      out.push(`${chalk.cyan('gtag')}  ${chalk.bold(String(cmd).padEnd(7))} ${args.map(inline).join('  ')}`);
-      if (params) kv(keyValues(params), '         ');
+      row(String(p[0]), args.map(inline).join('  '));
+      if (params) paramLines(params);
     } else if (p && typeof p === 'object' && !Array.isArray(p)) {
       const { event, ...rest } = p as Record<string, unknown>;
-      out.push(`${chalk.cyan('push')}  ${event !== undefined ? chalk.bold(`event ${inline(event)}`) : chalk.bold('data')}`);
-      if (Object.keys(rest).length) kv(keyValues(rest), '         ');
-    } else {
-      out.push(`${chalk.cyan('push')}  ${inline(p)}`);
+      row(event !== undefined ? 'event' : 'data', event !== undefined ? inline(event) : '');
+      paramLines(rest);
     }
   }
-  for (const src of data.scripts ?? []) out.push(`${chalk.cyan('load')}  ${src}`);
-  if (data.truncated) out.push(chalk.gray('(more was sent; truncated at the 2 KB cap)'));
-  return out;
-}
+  for (const src of withData?.data?.scripts ?? []) row('loads', shortSrc(src));
+  if (!withData) row('sent', chalk.gray('nothing captured'));
 
-interface RenderOptions { width: number; height: number; status: string; intervalS: number; paused?: boolean }
+  const pages = new Map<string, number>();
+  for (const e of mine) { const p = pagePath(e); if (p) pages.set(p, (pages.get(p) ?? 0) + 1); }
+  const topPages = [...pages.entries()].sort((a, b) => b[1] - a[1]).map(([p]) => p);
+  if (topPages.length) row('pages', topPages.slice(0, 3).join(chalk.gray('  ·  ')) + (topPages.length > 3 ? chalk.gray(`  +${topPages.length - 3}`) : ''));
 
-function header(label: string, mode: string, o: RenderOptions, w: number): string[] {
-  const title = `${chalk.bold.magenta('YourTM monitor')} ${chalk.gray('·')} ${mode} ${chalk.gray('·')} ${label}`;
-  return [fit(`${title}   ${chalk.gray(o.status)}`, w), chalk.gray('─'.repeat(w))];
-}
+  const lastError = [...mine].reverse().find(e => e.status === 'error');
+  if (lastError) row('error', chalk.red(lastError.error || 'failed'));
+  if (mine.some(e => e.status === 'blocked')) row('blocked', chalk.yellow('waiting for consent'));
+  return lines;
 
-function summaryLine(s: Summary, w: number): string {
-  return fit([
-    `Executions ${chalk.bold(String(s.executed))}`,
-    `Success ${chalk.bold(s.failed ? chalk.red(pct(s.executed - s.failed, s.executed)) : chalk.green(pct(s.executed, s.executed)))}`,
-    `Blocked ${chalk.bold(s.blocked ? chalk.yellow(String(s.blocked)) : '0')}`,
-    `Avg ${chalk.bold(ms(s.avg))}`,
-    `P95 ${chalk.bold(s.p95 !== undefined && s.p95 > 100 ? chalk.yellow(ms(s.p95)) : ms(s.p95))}`,
-    `${chalk.bold(s.perMin.toFixed(1))}/min`,
-  ].join('   '), w);
-}
-
-function renderOverview(label: string, mode: string, events: TagEvent[], o: RenderOptions, selected = -1): string {
-  const w = Math.max(60, o.width);
-  const lines: string[] = [];
-  const s = summarize(events);
-
-  lines.push(...header(label, mode, o, w));
-  lines.push(summaryLine(s, w));
-  lines.push('');
-
-  const rows = byTag(events);
-  const nameW = Math.max(16, Math.min(44, w - 46));
-  lines.push(chalk.gray('  ' + pad('TAG', nameW) + pad('FIRES', 7, true) + pad('OK', 6, true) + pad('BLOCKED', 9, true) +
-    pad('AVG', 9, true) + pad('P95', 9, true) + '  LAST'));
-  const maxTagRows = Number.isFinite(o.height) ? Math.max(3, Math.floor((o.height - 12) / 2)) : rows.length;
-  // Keep the selection on screen when there are more tags than rows.
-  const first = selected >= maxTagRows ? selected - maxTagRows + 1 : 0;
-  rows.slice(first, first + maxTagRows).forEach((r, i) => {
-    const ok = r.failed ? chalk.red(pct(r.fires - r.failed, r.fires)) : pct(r.fires, r.fires);
-    const isSel = first + i === selected;
-    const row = pad(r.name, nameW) + pad(String(r.fires), 7, true) + pad(ok, 6, true) +
-      pad(r.blocked ? chalk.yellow(String(r.blocked)) : '0', 9, true) + pad(ms(r.avg), 9, true) +
-      pad(ms(r.p95), 9, true) + '  ' + chalk.gray(time(r.last));
-    lines.push(fit((isSel ? chalk.magenta('▶ ') + chalk.bold(row) : '  ' + row), w));
-  });
-  if (rows.length > maxTagRows) lines.push(chalk.gray(`  … ${rows.length - maxTagRows} more tags (↑/↓ to scroll)`));
-  if (rows.length === 0) lines.push(chalk.gray('No tag events yet. Load a page that runs this container.'));
-  lines.push('');
-
-  lines.push(chalk.gray('RECENT'));
-  const room = Number.isFinite(o.height) ? Math.max(1, o.height - lines.length - 2) : 15;
-  for (const e of events.slice(-room).reverse()) lines.push(eventLine(e, w));
-  if (Number.isFinite(o.height)) {
-    while (lines.length < o.height - 1) lines.push('');
-    lines.push(chalk.gray(fit(`↑/↓ select · enter details · p ${o.paused ? 'resume' : 'pause'} · q quit · ` +
-      `every ${o.intervalS}s · last ${events.length} events`, w)));
+  function paramLines(params: Record<string, unknown>) {
+    const kv = keyValues(params);
+    if (!kv.length) return;
+    const w = Math.min(22, Math.max(...kv.map(([k]) => k.length)));
+    for (const [k, v] of kv.slice(0, MAX_PARAMS)) lines.push(`${' '.repeat(LABEL)}${chalk.gray(k.padEnd(w))}  ${v}`);
+    if (kv.length > MAX_PARAMS) lines.push(`${' '.repeat(LABEL)}${chalk.gray(`+${kv.length - MAX_PARAMS} more`)}`);
   }
-  return lines.join('\n');
 }
 
-function topCounts(values: string[], n: number): string {
-  const counts = new Map<string, number>();
-  for (const v of values) if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
-  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
-    .map(([k, c]) => `${k} ${chalk.gray('×' + c)}`).join('   ') || chalk.gray('—');
+interface ListState {
+  selected: number;
+  expanded: Set<string>;
+  scroll: number;
+  paused: boolean;
+  /** Just expanded: scroll so its details are visible, once. */
+  reveal?: string;
+}
+
+interface Screen { text: string; rowTags: Array<string | undefined>; bodyStart: number; bodyLines: number; scroll: number }
+
+interface ListOptions {
+  width: number;
+  height: number;            // Infinity: print everything, no footer
+  status: string;
+  interactive: boolean;
+  follow: boolean;           // keep the selected row in view
+}
+
+function renderList(label: string, events: TagEvent[], st: ListState, o: ListOptions): Screen {
+  // Narrow on purpose: counts stay close to the names they belong to.
+  const w = Math.max(50, Math.min(o.width, 84));
+  const title = `${chalk.bold('YourTM')} ${chalk.gray('·')} ${label.replace(/^https?:\/\//, '')}`;
+  const right = o.status;
+  const top = [title + ' '.repeat(Math.max(2, w - visible(title) - visible(right))) + right, ''];
+
+  const body: string[] = [];
+  const tags: Array<string | undefined> = [];
+  const rows = byTag(events);
+  let selectedLine = 0;
+  let revealFrom = -1;
+  let revealTo = -1;
+
+  rows.forEach((r, i) => {
+    const open = st.expanded.has(r.name);
+    const isSel = o.interactive && i === st.selected;
+    const counts = [
+      `${r.fires} ${r.fires === 1 ? 'fire' : 'fires'}`,
+      r.failed ? chalk.red(`${r.failed} failed`) : '',
+      r.blocked ? chalk.yellow(`${r.blocked} blocked`) : '',
+    ].filter(Boolean).join(chalk.gray(' · '));
+    const arrow = open ? '▾' : '▸';
+    const name = fit(r.name, w - visible(counts) - 4);
+    const line = `${isSel ? chalk.magenta(arrow) : chalk.gray(arrow)} ${isSel ? chalk.bold(name) : name}`;
+    if (isSel) selectedLine = body.length;
+    if (r.name === st.reveal) revealFrom = body.length;
+    body.push(line + ' '.repeat(Math.max(2, w - visible(line) - visible(counts))) + chalk.gray(counts));
+    tags.push(r.name);
+    if (open) {
+      for (const l of detailLines(events, r.name)) { body.push(fit('    ' + l, w)); tags.push(r.name); }
+      body.push(''); tags.push(r.name);
+    }
+    if (r.name === st.reveal) revealTo = body.length - 1;
+  });
+  if (rows.length === 0) { body.push(chalk.gray('No tags have fired yet. Load a page that runs this container.')); tags.push(undefined); }
+
+  if (!Number.isFinite(o.height)) {
+    return { text: [...top, ...body].join('\n'), rowTags: tags, bodyStart: top.length, bodyLines: body.length, scroll: 0 };
+  }
+
+  const footer = chalk.gray('click a tag to expand · q quit');
+  const bodyLines = Math.max(3, o.height - top.length - 2);
+  let scroll = st.scroll;
+  if (o.follow) {
+    if (selectedLine < scroll) scroll = selectedLine;
+    if (selectedLine >= scroll + bodyLines) scroll = selectedLine - bodyLines + 1;
+  }
+  if (revealFrom >= 0) {
+    if (revealTo >= scroll + bodyLines) scroll = Math.min(revealFrom, revealTo - bodyLines + 1);
+    if (revealFrom < scroll) scroll = revealFrom;
+  }
+  scroll = Math.max(0, Math.min(scroll, Math.max(0, body.length - bodyLines)));
+  const shown = body.slice(scroll, scroll + bodyLines);
+  while (shown.length < bodyLines) shown.push('');
+  return {
+    text: [...top, ...shown, '', footer].join('\n'),
+    rowTags: tags.slice(scroll, scroll + bodyLines),
+    bodyStart: top.length,
+    bodyLines,
+    scroll,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Runners
 // ---------------------------------------------------------------------------
 
-/** The expandable card under a tag row. */
-function tagCard(events: TagEvent[], tagName: string, width: number): string[] {
-  const mine = events.filter(e => e.tagName === tagName);
-  const s = summarize(mine);
-  const last = mine[mine.length - 1];
-  const inner = width - 6;
-  const body: string[] = [];
-  body.push(`${chalk.bold(String(s.executed))} fires   OK ${s.failed ? chalk.red(pct(s.executed - s.failed, s.executed)) : chalk.green(pct(s.executed, s.executed))}` +
-    `   blocked ${s.blocked}   avg ${ms(s.avg)}   p95 ${ms(s.p95)}   last ${last ? time(last.timestamp) : '—'}`);
-  body.push(`${chalk.gray('id       ')} ${last?.tagId ?? ''}${last?.zone ? chalk.gray('   zone ') + last.zone : ''}`);
-  body.push(`${chalk.gray('triggers ')} ${topCounts(mine.map(e => e.trigger ?? ''), 4)}`);
-  body.push(`${chalk.gray('pages    ')} ${topCounts(mine.map(pagePath), 5)}`);
-  body.push(`${chalk.gray('countries')} ${topCounts(mine.map(e => e.region ?? ''), 6)}`);
-  const errors = mine.filter(e => e.status === 'error').slice(-3);
-  for (const e of errors) body.push(chalk.red(`error ${time(e.timestamp)}  ${e.error ?? ''}`));
-  body.push('');
-  const withData = [...mine].reverse().find(e => e.data);
-  body.push(chalk.bold('Sent on last fire') + (withData ? chalk.gray(`  ${time(withData.timestamp)}  ${pagePath(withData)}`) : ''));
-  for (const l of readableData(withData?.data)) body.push('  ' + l);
-  body.push('');
-  body.push(chalk.bold('Recent fires'));
-  for (const e of mine.slice(-5).reverse()) {
-    const detail = e.status === 'error' ? chalk.red(e.error || 'error') : e.status === 'blocked' ? chalk.yellow('blocked') : chalk.gray(ms(e.latency));
-    body.push(`  ${chalk.gray(time(e.timestamp))}  ${statusIcon(e)} ${detail}  ${pagePath(e)}${e.region ? chalk.gray('  ' + e.region) : ''}${e.trigger ? chalk.gray('  ⟵ ' + e.trigger) : ''}`);
-  }
-  return [
-    chalk.gray('  ╭' + '─'.repeat(Math.max(0, width - 4))),
-    ...body.map(l => chalk.gray('  │ ') + fit(l, inner)),
-    chalk.gray('  ╰' + '─'.repeat(Math.max(0, width - 4))),
-  ];
-}
-
-interface Screen { text: string; rowTags: Array<string | undefined>; bodyStart: number; bodyLines: number; scroll: number }
-
-interface DashState {
-  selected: number;
-  expanded: Set<string>;
-  scroll: number;
-  paused: boolean;
-  /** Just expanded: scroll so its card is visible, once. */
-  reveal?: string;
-}
-
-/** Header + scrollable body (tag rows, open cards, recent feed) + footer. */
-function renderInteractive(label: string, mode: string, events: TagEvent[], o: RenderOptions, st: DashState, follow: boolean): Screen {
-  const w = Math.max(60, o.width);
-  const top: string[] = [...header(label, mode, o, w), summaryLine(summarize(events), w), ''];
-  const rows = byTag(events);
-  const nameW = Math.max(16, Math.min(44, w - 48));
-  top.push(chalk.gray('    ' + pad('TAG', nameW) + pad('FIRES', 7, true) + pad('OK', 6, true) + pad('BLOCKED', 9, true) +
-    pad('AVG', 9, true) + pad('P95', 9, true) + '  LAST'));
-
-  // Body lines, each remembering which tag (if any) a click on it means.
-  const body: string[] = [];
-  const bodyTags: Array<string | undefined> = [];
-  let selectedLine = 0;
-  let revealFrom = -1;
-  let revealTo = -1;
-  rows.forEach((r, i) => {
-    const open = st.expanded.has(r.name);
-    const isSel = i === st.selected;
-    const ok = r.failed ? chalk.red(pct(r.fires - r.failed, r.fires)) : pct(r.fires, r.fires);
-    const row = pad(r.name, nameW) + pad(String(r.fires), 7, true) + pad(ok, 6, true) +
-      pad(r.blocked ? chalk.yellow(String(r.blocked)) : '0', 9, true) + pad(ms(r.avg), 9, true) +
-      pad(ms(r.p95), 9, true) + '  ' + chalk.gray(time(r.last));
-    if (isSel) selectedLine = body.length;
-    body.push(fit(`${isSel ? chalk.magenta('▶') : ' '} ${open ? '▾' : '▸'} ${isSel ? chalk.bold(row) : row}`, w));
-    bodyTags.push(r.name);
-    if (r.name === st.reveal) revealFrom = body.length - 1;
-    if (open) {
-      for (const l of tagCard(events, r.name, w)) { body.push(l); bodyTags.push(r.name); }
-    }
-    if (r.name === st.reveal) revealTo = body.length - 1;
-  });
-  if (rows.length === 0) { body.push(chalk.gray('  No tag events yet. Load a page that runs this container.')); bodyTags.push(undefined); }
-  body.push(''); bodyTags.push(undefined);
-  body.push(chalk.gray('  RECENT')); bodyTags.push(undefined);
-  for (const e of events.slice(-15).reverse()) { body.push('  ' + eventLine(e, w - 2)); bodyTags.push(e.tagName); }
-
-  const footer = chalk.gray(fit(`click a tag to expand · ↑/↓ select · enter/space toggle · a all · esc collapse · ` +
-    `wheel/PgUp/PgDn scroll · p ${st.paused ? 'resume' : 'pause'} · q quit · every ${o.intervalS}s`, w));
-  const bodyLines = Math.max(3, o.height - top.length - 1);
-
-  // After keyboard selection, bring the selected row into view; after a click
-  // or the wheel, leave the viewport where the user put it. Always clamp.
-  let scroll = st.scroll;
-  if (follow) {
-    if (selectedLine < scroll) scroll = selectedLine;
-    if (selectedLine >= scroll + bodyLines) scroll = selectedLine - bodyLines + 1;
-  }
-  if (revealFrom >= 0) {
-    // Show the whole card if it fits, never pushing its tag row off the top.
-    if (revealTo >= scroll + bodyLines) scroll = Math.min(revealFrom, revealTo - bodyLines + 1);
-    if (revealFrom < scroll) scroll = revealFrom;
-  }
-  scroll = Math.max(0, Math.min(scroll, Math.max(0, body.length - bodyLines)));
-
-  const visibleBody = body.slice(scroll, scroll + bodyLines);
-  while (visibleBody.length < bodyLines) visibleBody.push('');
-  return {
-    text: [...top, ...visibleBody, footer].join('\n'),
-    rowTags: bodyTags.slice(scroll, scroll + bodyLines),
-    bodyStart: top.length,           // 0-based screen row of the first body line
-    bodyLines,
-    scroll,
-  };
-}
-
 async function runDashboard(source: Source, mode: string, intervalS: number, keep: (e: TagEvent) => boolean): Promise<void> {
   const out = process.stdout;
   let events: TagEvent[] = [];
-  let status = 'connecting…';
+  let status = chalk.gray('connecting…');
   let timer: NodeJS.Timeout | undefined;
-  const st: DashState = { selected: 0, expanded: new Set(), scroll: 0, paused: false };
+  const st: ListState = { selected: 0, expanded: new Set(), scroll: 0, paused: false };
   let screen: Screen | undefined;
-  // Mouse wheel moves the viewport; only selection changes may pull it back.
-  let followSelection = true;
+  let follow = true;
 
   const names = () => byTag(events).map(r => r.name);
 
   const draw = () => {
-    const n = names();
-    st.selected = Math.min(Math.max(0, st.selected), Math.max(0, n.length - 1));
-    const o = { width: out.columns || 100, height: out.rows || 30, status: st.paused ? chalk.yellow('paused') : status, intervalS, paused: st.paused };
-    screen = renderInteractive(source.label, mode, events, o, st, followSelection);
+    st.selected = Math.min(Math.max(0, st.selected), Math.max(0, names().length - 1));
+    screen = renderList(source.label, events, st, {
+      width: out.columns || 100, height: out.rows || 30, interactive: true, follow,
+      status: st.paused ? chalk.yellow('paused') : status,
+    });
     st.scroll = screen.scroll;
     st.reveal = undefined;
     out.write('\x1b[H\x1b[2J' + screen.text);
@@ -568,49 +492,47 @@ async function runDashboard(source: Source, mode: string, intervalS: number, kee
     process.stdin.resume();
     process.stdin.on('data', (buf: Buffer) => {
       let input = buf.toString();
-
-      // Mouse: ESC [ < button ; col ; row (M = press, m = release)
       const mouse = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
       let m: RegExpExecArray | null;
-      let handled = false;
+      let sawMouse = false;
       while ((m = mouse.exec(input))) {
-        handled = true;
-        const button = Number(m[1]);
-        const row = Number(m[3]) - 1;
+        sawMouse = true;
         if (m[4] !== 'M') continue;
-        if (button === 64) { st.scroll = Math.max(0, st.scroll - 3); followSelection = false; }
-        else if (button === 65) { st.scroll += 3; followSelection = false; }
+        const button = Number(m[1]);
+        if (button === 64) { st.scroll = Math.max(0, st.scroll - 3); follow = false; }
+        else if (button === 65) { st.scroll += 3; follow = false; }
         else if (button === 0 && screen) {
-          const i = row - screen.bodyStart;
+          const i = Number(m[3]) - 1 - screen.bodyStart;
           const name = i >= 0 && i < screen.bodyLines ? screen.rowTags[i] : undefined;
           if (name) {
-            const idx = names().indexOf(name);
-            if (idx >= 0) st.selected = idx;
+            st.selected = Math.max(0, names().indexOf(name));
             toggle(name);
-            followSelection = false;   // keep the clicked row where it is
+            follow = false;
           }
         }
       }
       input = input.replace(mouse, '');
-      if (handled && !input) return draw();
+      if (sawMouse && !input) return draw();
 
-      const sel = () => names()[st.selected];
-      const k = input;
-      if (k === 'q' || k === 'Q' || k === '\u0003') return restore();
-      if (k === '\x1b[A' || k === 'k') { st.selected--; followSelection = true; }
-      else if (k === '\x1b[B' || k === 'j') { st.selected++; followSelection = true; }
-      else if (k === '\r' || k === ' ' || k === '\x1b[C' || k === 'l') { toggle(sel()); followSelection = true; }
-      else if (k === '\x1b[D' || k === 'h') { if (sel()) st.expanded.delete(sel()); followSelection = true; }
-      else if (k === '\x1b') { st.expanded.clear(); followSelection = true; }
-      else if (k === 'a' || k === 'A') {
-        const all = names();
-        if (all.every(n => st.expanded.has(n))) st.expanded.clear(); else all.forEach(n => st.expanded.add(n));
-        followSelection = true;
+      const sel = names()[st.selected];
+      switch (input) {
+        case 'q': case 'Q': case '\u0003': return restore();
+        case '\x1b[A': case 'k': st.selected--; follow = true; break;
+        case '\x1b[B': case 'j': st.selected++; follow = true; break;
+        case '\r': case ' ': case '\x1b[C': case 'l': toggle(sel); follow = true; break;
+        case '\x1b[D': case 'h': if (sel) st.expanded.delete(sel); follow = true; break;
+        case '\x1b': st.expanded.clear(); follow = true; break;
+        case 'a': case 'A': {
+          const all = names();
+          if (all.every(n => st.expanded.has(n))) st.expanded.clear(); else all.forEach(n => st.expanded.add(n));
+          follow = true;
+          break;
+        }
+        case '\x1b[5~': st.scroll = Math.max(0, st.scroll - ((screen?.bodyLines ?? 10) - 2)); follow = false; break;
+        case '\x1b[6~': st.scroll += (screen?.bodyLines ?? 10) - 2; follow = false; break;
+        case 'p': case 'P': st.paused = !st.paused; break;
+        default: return;
       }
-      else if (k === '\x1b[5~') { st.scroll = Math.max(0, st.scroll - ((screen?.bodyLines ?? 10) - 2)); followSelection = false; }
-      else if (k === '\x1b[6~') { st.scroll += (screen?.bodyLines ?? 10) - 2; followSelection = false; }
-      else if (k === 'p' || k === 'P') st.paused = !st.paused;
-      else return;
       draw();
     });
   }
@@ -619,9 +541,9 @@ async function runDashboard(source: Source, mode: string, intervalS: number, kee
     if (!st.paused) {
       try {
         events = (await source.fetchEvents()).filter(keep);
-        status = `${chalk.green('●')} updated ${time(Date.now())}`;
+        status = `${chalk.green('●')} ${chalk.gray(mode + ' ' + time(Date.now()))}`;
       } catch (error) {
-        status = `${chalk.red('●')} ${error instanceof Error ? error.message : String(error)}`;
+        status = `${chalk.red('●')} ${chalk.red(error instanceof Error ? error.message : String(error))}`;
       }
     }
     draw();
