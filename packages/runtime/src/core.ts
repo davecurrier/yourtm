@@ -3,6 +3,7 @@
  * Tag registration, execution, zone detection, and performance tracking
  */
 
+import { withBuiltins } from './builtins';
 import { 
   type VariableDefinition, 
   type TelemetryEvent, 
@@ -122,14 +123,27 @@ export function registerTags(list: TagConfig[]): void {
  * Register a variable
  */
 export function registerVariable(v: VariableDefinition): void {
-  variables.set(v.name, v);
+  variables.set(variableKey(v), v);
+}
+
+/**
+ * The key a variable is looked up by — `ctx.variables['<key>']`.
+ *
+ * Its id, not its display name. Imported assets carry a human-readable name
+ * ("cJS - Search Term") and a slug id ("cjs-search-term"), and every generated
+ * reference uses the slug; keying by name meant each of those resolved to
+ * undefined. Hand-authored containers name their variables in slug form
+ * already, so id and name coincide there and nothing changes.
+ */
+function variableKey(v: VariableDefinition): string {
+  return (v as { id?: string }).id || v.name;
 }
 
 /**
  * Register multiple variables
  */
 export function registerVariables(list: VariableDefinition[]): void {
-  for (const v of list) variables.set(v.name, v);
+  for (const v of list) variables.set(variableKey(v), v);
 }
 
 /**
@@ -204,13 +218,16 @@ export async function executeTag(
   // Resolve variables for the tag context (Lazy resolution via Proxy)
   const tagVariables: Record<string, any> = {};
   const resolvePromises = Array.from(variables.values()).map(async (def) => {
-    tagVariables[def.name] = await resolveVariable(def, variables, tagVariables);
+    tagVariables[variableKey(def)] = await resolveVariable(def, variables, tagVariables);
   });
   await Promise.all(resolvePromises);
 
   const fullCtx: TagContext = {
     dataLayer: (window as unknown as { dataLayer: Record<string, unknown> }).dataLayer || {},
-    variables: tagVariables,
+    // Built-ins are not container assets, so they are layered on here
+    // rather than registered — imported custom JS reads them through
+    // ctx.variables just like any other variable.
+    variables: withBuiltins(tagVariables, ctx as { element?: Element }),
     url: location.href,
     consent: getConsent(),
     ...ctx

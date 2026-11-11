@@ -5,8 +5,9 @@
 
 import { executeTrigger } from './core';
 import { onEvent as onDL, push, get as dlGet } from './dataLayer';
+import { builtinVar } from './builtins';
 
-export type TriggerType = 'pageview' | 'click' | 'scroll' | 'timer' | 'visibility' | 'custom' | 'domReady' | 'windowLoad' | 'formSubmit';
+export type TriggerType = 'pageview' | 'click' | 'scroll' | 'timer' | 'visibility' | 'custom' | 'domReady' | 'windowLoad' | 'formSubmit' | 'init' | 'consentInit';
 
 export interface TriggerConfig {
   id: string;
@@ -22,7 +23,8 @@ export interface TriggerConfig {
 
 export interface TriggerCondition {
   variable: string;
-  operator: 'equals' | 'contains' | 'matches' | 'exists' | 'gt' | 'lt';
+  operator: 'equals' | 'contains' | 'matches' | 'exists' | 'gt' | 'lt'
+          | 'startsWith' | 'endsWith' | 'selector';
   value?: string | number | boolean;
 }
 
@@ -32,7 +34,13 @@ let inited = false;
 export function initTriggers(triggers: TriggerConfig[]): void {
   if (inited) return;
   inited = true;
-  for (const t of triggers) registerTrigger(t);
+  // GTM ordering, and it matters: consent initialisation runs before
+  // initialisation, which runs before everything else. Consent defaults have to
+  // be in place before the first tag gets to ask whether it may fire — a
+  // Consent Mode default that lands second is the same as no default at all.
+  const rank = (t: TriggerConfig) =>
+    t.type === 'consentInit' ? 0 : t.type === 'init' ? 1 : 2;
+  for (const t of [...triggers].sort((a, b) => rank(a) - rank(b))) registerTrigger(t);
 }
 
 export function registerTrigger(t: TriggerConfig): () => void {
@@ -45,7 +53,9 @@ export function registerTrigger(t: TriggerConfig): () => void {
     custom: setupCustom,
     domReady: setupDomReady,
     windowLoad: setupWindowLoad,
-    formSubmit: setupFormSubmit
+    formSubmit: setupFormSubmit,
+    init: setupImmediate,
+    consentInit: setupImmediate
   };
   const cleanup = handlers[t.type]?.(t);
   if (cleanup) cleanups.set(t.id, cleanup);
@@ -69,37 +79,6 @@ async function fire(t: TriggerConfig, ctx: { element?: Element; event?: string }
   await executeTrigger(t.id, ctx);
 }
 
-/**
- * Built-in variables a condition may reference.
- *
- * Conditions used to resolve through dlGet() alone, which walks the dataLayer
- * by dot-path. But the GTM importer emits conditions against variable names
- * like `page-url` and `form-id`, which are built-ins rather than dataLayer
- * keys — so each resolved to undefined and the trigger silently never fired.
- * In the reference container that was 13 of 19 triggers.
- *
- * Element-scoped built-ins need the event context, which is why checkConds now
- * receives it.
- */
-function builtinVar(name: string, ctx: { element?: Element }): unknown {
-  const el = ctx.element as HTMLElement | undefined;
-  switch (name) {
-    case 'page-url': return location.href;
-    case 'page-hostname': return location.hostname;
-    case 'page-path': return location.pathname;
-    case 'referrer': return document.referrer;
-    case 'click-element':
-    case 'form-element': return el;
-    case 'click-classes':
-    case 'form-classes': return el?.className ?? '';
-    case 'click-id':
-    case 'form-id': return el?.id ?? '';
-    case 'click-text': return el?.textContent?.trim().slice(0, 100) ?? '';
-    case 'click-url': return (el?.closest('a') as HTMLAnchorElement | null)?.href ?? '';
-    default: return undefined;
-  }
-}
-
 function checkConds(conds: TriggerCondition[], ctx: { element?: Element } = {}): boolean {
   for (const c of conds) {
     // Built-ins win; anything else stays a dataLayer path, as before.
@@ -112,35 +91,51 @@ function checkConds(conds: TriggerCondition[], ctx: { element?: Element } = {}):
       case 'exists': if (v == null) return false; break;
       case 'gt': if (typeof v !== 'number' || v <= Number(c.value)) return false; break;
       case 'lt': if (typeof v !== 'number' || v >= Number(c.value)) return false; break;
+      case 'startsWith': if (typeof v !== 'string' || !v.startsWith(String(c.value))) return false; break;
+      case 'endsWith': if (typeof v !== 'string' || !v.endsWith(String(c.value))) return false; break;
+      // GTM's CSS_SELECTOR filter, which tests the event's element rather than
+      // a string — the only operator whose left side is not text.
+      case 'selector':
+        if (!(v instanceof Element) || !v.matches(String(c.value))) return false;
+        break;
     }
   }
   return true;
 }
 
-function setupPageview(t: TriggerConfig): () => void {
-  /*
-   * Wait for the document to finish parsing before firing.
-   *
-   * A container ships as several files — core.js plus one bundle per zone —
-   * and only core.js contains the runtime. The zone bundles register their
-   * tags afterwards via window.YourTM.registerTag. `setTimeout(…, 0)` runs at
-   * the end of the current task, which is *before* the next <script> tag
-   * executes, so the pageview trigger fired against an empty registry and no
-   * tag ever ran. Measured on the reference container: 0 tag executions when
-   * loaded as separate scripts, 9 when concatenated into one.
-   *
-   * DOMContentLoaded is the right barrier: it fires after every
-   * parser-inserted script, classic or deferred, has executed. If the runtime
-   * itself was injected after that point there is nothing left to wait for, so
-   * fall back to the original behaviour.
-   */
+/**
+ * Run `cb` once the container's tags are all registered.
+ *
+ * A container ships as core.js plus one bundle per zone, and only core.js holds
+ * the runtime; the zone bundles call registerTag afterwards. Anything that
+ * wants to fire "immediately" therefore has to wait for DOMContentLoaded, which
+ * lands after every parser-inserted script has run — firing sooner means firing
+ * against an empty registry. If the runtime was injected after that point there
+ * is nothing left to wait for.
+ */
+function onContainerReady(cb: () => void): () => void {
   if (document.readyState === 'loading') {
-    const onReady = () => fire(t);
-    document.addEventListener('DOMContentLoaded', onReady, { once: true });
-    return () => document.removeEventListener('DOMContentLoaded', onReady);
+    document.addEventListener('DOMContentLoaded', cb, { once: true });
+    return () => document.removeEventListener('DOMContentLoaded', cb);
   }
-  const id = setTimeout(() => fire(t), 0);
+  const id = setTimeout(cb, 0);
   return () => clearTimeout(id);
+}
+
+/**
+ * Fire as early as the container allows.
+ *
+ * Backs GTM's Initialization and Consent Initialization triggers, which have no
+ * event to wait for — being first *is* the semantics. initTriggers() registers
+ * them ahead of everything else, and listeners run in the order they were
+ * added, so they still reach their tags before any pageview does.
+ */
+function setupImmediate(t: TriggerConfig): () => void {
+  return onContainerReady(() => fire(t));
+}
+
+function setupPageview(t: TriggerConfig): () => void {
+  return onContainerReady(() => fire(t));
 }
 
 function setupClick(t: TriggerConfig): () => void {

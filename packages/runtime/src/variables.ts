@@ -4,6 +4,8 @@
  */
 
 import type { VariableDefinition, VariableType } from '@yourtm/core';
+import { get as dlGet } from './dataLayer';
+import { withBuiltins } from './builtins';
 
 /**
  * Resolve a variable definition to its actual value
@@ -13,13 +15,16 @@ export async function resolveVariable(
   allVariables: Map<string, VariableDefinition>,
   resolved: Record<string, unknown>
 ): Promise<unknown> {
-  // If already resolved, return cached value
-  if (def.name in resolved) {
-    return resolved[def.name];
+  // Cache under the same key callers look the variable up by — its id, with
+  // the display name only as a fallback. Caching by name while core.ts stored
+  // by id meant the cache never hit and every variable resolved twice.
+  const key = (def as unknown as { id?: string }).id || def.name;
+  if (key in resolved) {
+    return resolved[key];
   }
 
   const value = await resolveByType(def, allVariables, resolved);
-  resolved[def.name] = value;
+  resolved[key] = value;
   return value;
 }
 
@@ -31,63 +36,84 @@ async function resolveByType(
   allVariables: Map<string, VariableDefinition>,
   resolved: Record<string, unknown>
 ): Promise<unknown> {
-  const config = def.config || {};
+  /*
+   * Container assets are flat.
+   *
+   * `defineDataLayerVariable({ path: 'sales_cycle' })` is what authors and the
+   * GTM importer both write, and the build ships that object verbatim — there
+   * is no `config` wrapper anywhere in a real container. This resolver read
+   * `def.config` exclusively, so every dataLayer, cookie and JavaScript
+   * variable resolved to undefined, and `getDataLayerValue(undefined)` threw on
+   * `path.split`. `config` is still consulted, second, for nested definitions.
+   */
+  const own = def as unknown as Record<string, unknown>;
+  const config = (def.config || {}) as Record<string, unknown>;
+  const field = (...names: string[]): unknown => {
+    for (const n of names) {
+      if (own[n] !== undefined) return own[n];
+      if (config[n] !== undefined) return config[n];
+    }
+    return undefined;
+  };
+
+  /** Call a user-supplied resolver with the same context shape tags get. */
+  const runResolve = (): unknown => {
+    const fn = field('resolve');
+    if (typeof fn !== 'function') return undefined;
+    return (fn as (ctx: unknown) => unknown)({
+      // Same view of variables a tag gets, built-ins included — imported
+      // custom JS reads {{Page URL}} as ctx.variables['page-url'].
+      variables: withBuiltins(resolved),
+      dataLayer: getDataLayer(),
+      url: new URL(location.href),
+    });
+  };
 
   switch (def.type) {
     case 'dataLayer':
-      return getDataLayerValue(config.key as string, config.version as number | undefined);
+      return getDataLayerValue(
+        field('path', 'key', 'name') as string,
+        field('version', 'dataLayerVersion') as number | undefined
+      );
 
     case 'cookie':
-      return getCookieValue(config.name as string);
+    case 'firstPartyCookie':
+      return getCookieValue(field('cookieName', 'name') as string);
 
     case 'localStorage':
-      return getLocalStorageValue(config.key as string);
+      return getLocalStorageValue(field('key', 'name') as string);
 
     case 'sessionStorage':
-      return getSessionStorageValue(config.key as string);
+      return getSessionStorageValue(field('key', 'name') as string);
 
     case 'url':
-      return getUrlValue(config.component as string, config.key as string | undefined);
+      return getUrlValue(
+        field('component') as string,
+        field('key', 'queryKey') as string | undefined
+      );
 
     case 'domElement':
       return getDomElementValue(
-        config.selector as string,
-        config.attribute as string | undefined
+        field('selector') as string,
+        field('attribute') as string | undefined
       );
 
+    // The importer emits a `resolve` function; hand-authored containers have
+    // historically used a `code` string. Both are in the wild.
     case 'javascript':
-      return evaluateJavaScript(config.code as string);
+      return typeof field('resolve') === 'function'
+        ? runResolve()
+        : evaluateJavaScript(field('code') as string);
 
     case 'constant':
-      return config.value;
+      return field('value');
 
     case 'computed':
-      if (typeof def.resolve === 'function') {
-        const ctx = {
-          variables: resolved,
-          dataLayer: getDataLayer(),
-          url: new URL(location.href),
-        };
-        return def.resolve(ctx);
-      }
-      return undefined;
-
-    case 'firstPartyCookie':
-      return getCookieValue(config.name as string);
-
     case 'custom':
-      if (typeof def.resolve === 'function') {
-        const ctx = {
-          variables: resolved,
-          dataLayer: getDataLayer(),
-          url: new URL(location.href),
-        };
-        return def.resolve(ctx);
-      }
-      return undefined;
+      return runResolve();
 
     default:
-      return undefined;
+      return runResolve();
   }
 }
 
@@ -95,6 +121,9 @@ async function resolveByType(
  * Get value from dataLayer
  */
 function getDataLayerValue(key: string, version?: number): unknown {
+  // A variable with no key is a broken definition, not a reason to throw
+  // inside every tag execution on the page.
+  if (!key) return undefined;
   const dl = getDataLayer();
 
   if (version === 2) {
@@ -108,8 +137,11 @@ function getDataLayerValue(key: string, version?: number): unknown {
     return undefined;
   }
 
-  // Simple key access with dot notation support
-  return getNestedValue(dl, key);
+  // Read the merged state, not the raw array. `dataLayer` on window is an
+  // append-only log of pushes, so a dot-path against it never matches a key a
+  // page actually pushed — the store dataLayer.ts maintains is what conditions
+  // already resolve against, and variables should agree with them.
+  return dlGet(key);
 }
 
 /**

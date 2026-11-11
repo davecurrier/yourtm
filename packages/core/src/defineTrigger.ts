@@ -932,3 +932,38 @@ export function defineInitTrigger(
 ): Record<string, unknown> {
   return { ...input, type: 'init' };
 }
+
+/**
+ * Fire before everything else, including the init trigger.
+ *
+ * GTM's Consent Initialization, and the only correct home for Consent Mode
+ * defaults: a default that lands after the first marketing tag has already
+ * asked permission is not a default. The importer emitted this symbol for any
+ * container using consent mode, but nothing exported it — so those containers
+ * failed to build.
+ */
+export function defineConsentInitTrigger(
+  input: { name: string; description?: string; priority?: number; enabled?: boolean }
+): Record<string, unknown> {
+  return { ...input, type: 'consentInit' };
+}
+
+/**
+ * Fire on DOMContentLoaded. GTM's DOM Ready.
+ */
+export function defineDOMReadyTrigger(
+  input: { name: string; description?: string; conditions?: unknown;
+           priority?: number; enabled?: boolean }
+): Record<string, unknown> {
+  return { ...input, type: 'domReady' };
+}
+
+/**
+ * Fire on window load, once subresources have finished. GTM's Window Loaded.
+ */
+export function defineWindowLoadTrigger(
+  input: { name: string; description?: string; conditions?: unknown;
+           priority?: number; enabled?: boolean }
+): Record<string, unknown> {
+  return { ...input, type: 'windowLoad' };
+}
