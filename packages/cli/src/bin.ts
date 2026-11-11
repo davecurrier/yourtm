@@ -230,13 +230,21 @@ program
 
 // Monitor command
 program
-  .command('monitor')
-  .description('Real-time tag performance monitoring')
-  .option('-c, --container <id>', 'Container ID')
-  .option('-m, --mode <mode>', 'Monitor mode: preview or live', 'preview')
-  .option('-f, --filter <tag>', 'Filter by tag name')
-  .action(async (options) => {
-    await monitorCommand(options);
+  .command('monitor [url]')
+  .description('Live tag telemetry: a deployed site (live) or a local preview build')
+  .option('-m, --mode <mode>', 'live (a site\'s worker) or preview (ytm dev / the app); default: live when a URL is given')
+  .option('-f, --filter <tag>', 'Only tags whose name or id contains this')
+  .option('-i, --interval <seconds>', 'Refresh interval (live: 5s minimum)')
+  .option('-p, --port <port>', 'ytm dev port, for preview mode', '3456')
+  .option('--once', 'Print one snapshot and exit')
+  .option('--plain', 'One line per event instead of the full-screen dashboard')
+  .addHelpText('after', `
+Examples:
+  ytm monitor https://yourtm.dev        live dashboard for a deployed site
+  ytm monitor --mode preview            events from a running ytm dev --preview
+  ytm monitor https://yourtm.dev --once snapshot of tags, success rate and latency`)
+  .action(async (url, options) => {
+    await monitorCommand(url, options);
   });
 
 // Create command

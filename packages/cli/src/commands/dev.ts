@@ -21,6 +21,19 @@ interface DevOptions {
   previewEndpoint?: string;
 }
 
+/**
+ * Recent preview events, for `ytm monitor --mode preview` to read via
+ * GET /_ytm/telemetry. Newest last; bounded.
+ */
+const MAX_RECENT_EVENTS = 500;
+const recentEvents: Array<Record<string, unknown>> = [];
+
+function rememberEvent(event: Record<string, unknown>): void {
+  const id = `${event.tagId ?? '?'}-${event.timestamp ?? Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  recentEvents.push({ id, receivedAt: Date.now(), ...event });
+  if (recentEvents.length > MAX_RECENT_EVENTS) recentEvents.splice(0, recentEvents.length - MAX_RECENT_EVENTS);
+}
+
 const MIME_TYPES: Record<string, string> = {
   '.js': 'application/javascript',
   '.mjs': 'application/javascript',
@@ -223,7 +236,11 @@ function handleRequest(
       try {
         // sendBeacon posts text/plain, so parse regardless of content type.
         const parsed = JSON.parse(body) as TelemetryEvent | TelemetryEvent[];
-        for (const event of Array.isArray(parsed) ? parsed : [parsed]) handleTelemetryEvent(event);
+        for (const event of Array.isArray(parsed) ? parsed : [parsed]) {
+          handleTelemetryEvent(event);
+          const e = event as unknown as Record<string, unknown>;
+          rememberEvent(e.pageUrl ? e : { ...e, pageUrl: req.headers.referer });
+        }
         if (forwardTo) {
           // Best effort: the app may not be open.
           fetch(forwardTo, { method: 'POST', body, headers: { 'Content-Type': 'application/json' } })
@@ -236,6 +253,14 @@ function handleRequest(
         res.end('Invalid JSON');
       }
     });
+    return;
+  }
+
+  // Recent events, read by `ytm monitor --mode preview`
+  if (pathname === '/_ytm/telemetry' && req.method === 'GET') {
+    const limit = Math.min(Number(url.searchParams.get('limit')) || 200, MAX_RECENT_EVENTS);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ events: recentEvents.slice(-limit), total: recentEvents.length }));
     return;
   }
 
