@@ -965,6 +965,21 @@ export interface TagExecutionTelemetry extends BaseTelemetryEvent {
   success: boolean;
   error?: string;
   zone?: string;
+  /**
+   * What the tag did while it ran, captured only when telemetry is enabled:
+   * dataLayer entries it pushed (gtag() calls land here) and script URLs it
+   * added. Redacted and size-capped before it leaves the page.
+   */
+  data?: TagExecutionData;
+}
+
+export interface TagExecutionData {
+  /** New dataLayer entries, serialised; gtag() calls appear as arrays. */
+  pushes?: unknown[];
+  /** Scripts the tag added to the page (host + path, no query string). */
+  scripts?: string[];
+  /** Set when pushes were dropped to stay under the size cap. */
+  truncated?: boolean;
 }
 
 /**

@@ -4,6 +4,7 @@
  */
 
 import { withBuiltins } from './builtins';
+import { snapshot as snapshotTagData, diff as diffTagData } from './tagData';
 import { 
   type VariableDefinition, 
   type TelemetryEvent, 
@@ -233,6 +234,8 @@ export async function executeTag(
     ...ctx
   };
 
+  // Only pay for the before/after diff when the result is being sent somewhere.
+  const capture = cfg?.previewMode && cfg.previewEndpoint ? snapshotTagData() : undefined;
   const start = now();
   let success = true;
   let error: string | undefined;
@@ -259,6 +262,14 @@ export async function executeTag(
     error,
     zone: detectZone()?.id
   };
+  if (capture) {
+    try {
+      const data = diffTagData(capture);
+      if (data) t.data = data;
+    } catch {
+      // Never let telemetry capture break a tag.
+    }
+  }
 
   executed.add(tagId);
   trackEvent(t);

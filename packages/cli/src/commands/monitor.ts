@@ -5,9 +5,10 @@
  *   ytm monitor --mode preview               preview: a running `ytm dev`,
  *                                            or the YourTM app's receiver
  *
- * In a terminal it is a full-screen dashboard redrawn in place; piped, logged
- * or with --plain it prints one line per new event; --once prints a single
- * snapshot and exits.
+ * In a terminal it is a full-screen dashboard redrawn in place: an overview of
+ * every tag, and a detail view per tag (↑/↓ to select, Enter to open) showing
+ * its pages, countries and the data it sent. Piped, logged or with --plain it
+ * prints one line per new event; --once prints a single snapshot and exits.
  *
  * Live mode polls the worker's /_ytm/telemetry/events. Every poll is a
  * billable Worker request, so the interval is never below 5 s (the worker's
@@ -40,6 +41,16 @@ interface TagEvent {
   pageUrl?: string;
   region?: string;
   error?: string;
+  trigger?: string;
+  zone?: string;
+  data?: TagData;
+}
+
+/** What a tag did while it ran (see runtime/src/tagData.ts). */
+interface TagData {
+  pushes?: unknown[];
+  scripts?: string[];
+  truncated?: boolean;
 }
 
 interface Source {
@@ -77,7 +88,7 @@ export async function monitorCommand(url: string | undefined, options: MonitorOp
 
   if (options.once) {
     const events = (await source.fetchEvents()).filter(keep);
-    console.log(render(source.label, mode, events, { width: process.stdout.columns || 100, height: Infinity, status: 'snapshot', intervalS }));
+    console.log(renderOverview(source.label, mode, events, { width: process.stdout.columns || 100, height: Infinity, status: 'snapshot', intervalS }));
     return;
   }
 
@@ -170,6 +181,9 @@ function normalize(raw: unknown): TagEvent[] {
       pageUrl: e.pageUrl,
       region: e.region,
       error: e.error,
+      trigger: e.triggerName || e.trigger || e.triggerId,
+      zone: e.zone,
+      data: e.data && typeof e.data === 'object' ? e.data : undefined,
     };
   }).sort((a, b) => a.timestamp - b.timestamp);
 }
@@ -238,51 +252,104 @@ function pad(s: string, n: number, right = false): string {
   return right ? ' '.repeat(n - len) + s : s + ' '.repeat(n - len);
 }
 
-function eventLine(e: TagEvent, width: number): string {
-  const icon = e.status === 'fired' ? chalk.green('✓') : e.status === 'blocked' ? chalk.yellow('○') : chalk.red('✗');
+function statusIcon(e: TagEvent): string {
+  return e.status === 'fired' ? chalk.green('✓') : e.status === 'blocked' ? chalk.yellow('○') : chalk.red('✗');
+}
+
+function pagePath(e: TagEvent): string {
+  if (!e.pageUrl) return '';
+  try { return new URL(e.pageUrl).pathname; } catch { return e.pageUrl; }
+}
+
+function eventLine(e: TagEvent, width: number, withName = true): string {
   const detail = e.status === 'error' ? chalk.red(e.error || 'error')
     : e.status === 'blocked' ? chalk.yellow('blocked')
     : chalk.gray(ms(e.latency));
-  let page = '';
-  if (e.pageUrl) {
-    try { page = new URL(e.pageUrl).pathname; } catch { page = e.pageUrl; }
-  }
-  const where = [page, e.region].filter(Boolean).join('  ');
-  return fit(`${chalk.gray(time(e.timestamp))} ${icon} ${e.tagName}  ${detail}${where ? '  ' + chalk.gray(where) : ''}`, width);
+  const where = [pagePath(e), e.region].filter(Boolean).join('  ');
+  const data = compactData(e.data);
+  return fit(`${chalk.gray(time(e.timestamp))} ${statusIcon(e)} ${withName ? e.tagName + '  ' : ''}${detail}` +
+    `${where ? '  ' + chalk.gray(where) : ''}${data ? '  ' + chalk.cyan(data) : ''}`, width);
 }
 
-interface RenderOptions { width: number; height: number; status: string; intervalS: number }
+/** One line: gtag('config','G-…') → config("G-…"); {event:'x'} → event x; +script. */
+function compactData(data?: TagData): string {
+  if (!data) return '';
+  const parts: string[] = [];
+  for (const p of data.pushes ?? []) {
+    if (Array.isArray(p) && typeof p[0] === 'string') {
+      const args = p.slice(1).map(a => (typeof a === 'string' ? JSON.stringify(a) : JSON.stringify(a) ?? String(a)));
+      parts.push(`${p[0]}(${args.join(', ')})`);
+    } else if (p && typeof p === 'object' && 'event' in (p as object)) {
+      const { event, ...rest } = p as Record<string, unknown>;
+      const keys = Object.keys(rest);
+      parts.push(`event ${String(event)}${keys.length ? ` {${keys.slice(0, 4).join(', ')}${keys.length > 4 ? ', …' : ''}}` : ''}`);
+    } else {
+      parts.push(JSON.stringify(p));
+    }
+  }
+  for (const src of data.scripts ?? []) parts.push(`+${src.replace(/^www\./, '')}`);
+  if (data.truncated) parts.push('…');
+  return parts.join(' · ');
+}
 
-function render(label: string, mode: string, events: TagEvent[], o: RenderOptions): string {
-  const w = Math.max(60, o.width);
+/** Multi-line view of one event's data, for the tag detail screen. */
+function prettyData(data: TagData | undefined, width: number): string[] {
+  if (!data) return [chalk.gray('  (this tag sent no dataLayer pushes and loaded no scripts)')];
   const lines: string[] = [];
-  const s = summarize(events);
+  for (const p of data.pushes ?? []) {
+    const label = Array.isArray(p) && typeof p[0] === 'string' ? `gtag ${p[0]}` : 'dataLayer.push';
+    const body = Array.isArray(p) && typeof p[0] === 'string' ? p.slice(1) : p;
+    lines.push(chalk.cyan(`  ${label}`));
+    for (const l of JSON.stringify(body, null, 2).split('\n')) lines.push(fit('    ' + l, width));
+  }
+  for (const src of data.scripts ?? []) lines.push(chalk.cyan('  script ') + fit(src, width - 9));
+  if (data.truncated) lines.push(chalk.gray('  (truncated to stay under the size cap)'));
+  return lines;
+}
 
+interface RenderOptions { width: number; height: number; status: string; intervalS: number; paused?: boolean }
+
+function header(label: string, mode: string, o: RenderOptions, w: number): string[] {
   const title = `${chalk.bold.magenta('YourTM monitor')} ${chalk.gray('·')} ${mode} ${chalk.gray('·')} ${label}`;
-  lines.push(fit(`${title}   ${chalk.gray(o.status)}`, w));
-  lines.push(chalk.gray('─'.repeat(w)));
-  lines.push(fit([
+  return [fit(`${title}   ${chalk.gray(o.status)}`, w), chalk.gray('─'.repeat(w))];
+}
+
+function summaryLine(s: Summary, w: number): string {
+  return fit([
     `Executions ${chalk.bold(String(s.executed))}`,
     `Success ${chalk.bold(s.failed ? chalk.red(pct(s.executed - s.failed, s.executed)) : chalk.green(pct(s.executed, s.executed)))}`,
     `Blocked ${chalk.bold(s.blocked ? chalk.yellow(String(s.blocked)) : '0')}`,
     `Avg ${chalk.bold(ms(s.avg))}`,
     `P95 ${chalk.bold(s.p95 !== undefined && s.p95 > 100 ? chalk.yellow(ms(s.p95)) : ms(s.p95))}`,
     `${chalk.bold(s.perMin.toFixed(1))}/min`,
-  ].join('   '), w));
+  ].join('   '), w);
+}
+
+function renderOverview(label: string, mode: string, events: TagEvent[], o: RenderOptions, selected = -1): string {
+  const w = Math.max(60, o.width);
+  const lines: string[] = [];
+  const s = summarize(events);
+
+  lines.push(...header(label, mode, o, w));
+  lines.push(summaryLine(s, w));
   lines.push('');
 
   const rows = byTag(events);
   const nameW = Math.max(16, Math.min(44, w - 46));
-  lines.push(chalk.gray(pad('TAG', nameW) + pad('FIRES', 7, true) + pad('OK', 6, true) + pad('BLOCKED', 9, true) +
+  lines.push(chalk.gray('  ' + pad('TAG', nameW) + pad('FIRES', 7, true) + pad('OK', 6, true) + pad('BLOCKED', 9, true) +
     pad('AVG', 9, true) + pad('P95', 9, true) + '  LAST'));
   const maxTagRows = Number.isFinite(o.height) ? Math.max(3, Math.floor((o.height - 12) / 2)) : rows.length;
-  for (const r of rows.slice(0, maxTagRows)) {
+  // Keep the selection on screen when there are more tags than rows.
+  const first = selected >= maxTagRows ? selected - maxTagRows + 1 : 0;
+  rows.slice(first, first + maxTagRows).forEach((r, i) => {
     const ok = r.failed ? chalk.red(pct(r.fires - r.failed, r.fires)) : pct(r.fires, r.fires);
-    lines.push(fit(pad(r.name, nameW) + pad(String(r.fires), 7, true) + pad(ok, 6, true) +
+    const isSel = first + i === selected;
+    const row = pad(r.name, nameW) + pad(String(r.fires), 7, true) + pad(ok, 6, true) +
       pad(r.blocked ? chalk.yellow(String(r.blocked)) : '0', 9, true) + pad(ms(r.avg), 9, true) +
-      pad(ms(r.p95), 9, true) + '  ' + chalk.gray(time(r.last)), w));
-  }
-  if (rows.length > maxTagRows) lines.push(chalk.gray(`… ${rows.length - maxTagRows} more tags`));
+      pad(ms(r.p95), 9, true) + '  ' + chalk.gray(time(r.last));
+    lines.push(fit((isSel ? chalk.magenta('▶ ') + chalk.bold(row) : '  ' + row), w));
+  });
+  if (rows.length > maxTagRows) lines.push(chalk.gray(`  … ${rows.length - maxTagRows} more tags (↑/↓ to scroll)`));
   if (rows.length === 0) lines.push(chalk.gray('No tag events yet. Load a page that runs this container.'));
   lines.push('');
 
@@ -291,9 +358,48 @@ function render(label: string, mode: string, events: TagEvent[], o: RenderOption
   for (const e of events.slice(-room).reverse()) lines.push(eventLine(e, w));
   if (Number.isFinite(o.height)) {
     while (lines.length < o.height - 1) lines.push('');
-    lines.push(chalk.gray(fit(`q quit · refreshing every ${o.intervalS}s · window: last ${events.length} events`, w)));
+    lines.push(chalk.gray(fit(`↑/↓ select · enter details · p ${o.paused ? 'resume' : 'pause'} · q quit · ` +
+      `every ${o.intervalS}s · last ${events.length} events`, w)));
   }
   return lines.join('\n');
+}
+
+function topCounts(values: string[], n: number): string {
+  const counts = new Map<string, number>();
+  for (const v of values) if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
+    .map(([k, c]) => `${k} ${chalk.gray('×' + c)}`).join('   ') || chalk.gray('—');
+}
+
+function renderTag(label: string, mode: string, events: TagEvent[], tagName: string, o: RenderOptions): string {
+  const w = Math.max(60, o.width);
+  const mine = events.filter(e => e.tagName === tagName);
+  const lines: string[] = [...header(label, mode, o, w)];
+  lines.push(chalk.bold(`◀ ${tagName}`) + chalk.gray(`   ${mine[mine.length - 1]?.tagId ?? ''}`));
+  lines.push(summaryLine(summarize(mine), w));
+  lines.push(fit(`Pages      ${topCounts(mine.map(pagePath), 5)}`, w));
+  lines.push(fit(`Countries  ${topCounts(mine.map(e => e.region ?? ''), 6)}`, w));
+  lines.push(fit(`Triggers   ${topCounts(mine.map(e => e.trigger ?? ''), 4)}`, w));
+  lines.push('');
+
+  const latestWithData = [...mine].reverse().find(e => e.data);
+  lines.push(chalk.gray(`LAST DATA SENT${latestWithData ? '  ' + time(latestWithData.timestamp) : ''}`));
+  const dataLines = prettyData(latestWithData?.data, w);
+  const dataRoom = Number.isFinite(o.height) ? Math.max(3, Math.floor((o.height - lines.length) / 2)) : dataLines.length;
+  lines.push(...dataLines.slice(0, dataRoom));
+  if (dataLines.length > dataRoom) lines.push(chalk.gray(`  … ${dataLines.length - dataRoom} more lines`));
+  lines.push('');
+
+  lines.push(chalk.gray('FIRES'));
+  const room = Number.isFinite(o.height) ? Math.max(1, o.height - lines.length - 2) : 20;
+  for (const e of mine.slice(-room).reverse()) {
+    lines.push(eventLine({ ...e, pageUrl: e.pageUrl }, w, false) + (e.trigger ? chalk.gray(`  ⟵ ${e.trigger}`) : ''));
+  }
+  if (Number.isFinite(o.height)) {
+    while (lines.length < o.height - 1) lines.push('');
+    lines.push(chalk.gray(fit(`esc back · ↑/↓ other tags · p ${o.paused ? 'resume' : 'pause'} · q quit`, w)));
+  }
+  return lines.map(l => fit(l, w)).join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -305,11 +411,19 @@ async function runDashboard(source: Source, mode: string, intervalS: number, kee
   let events: TagEvent[] = [];
   let status = 'connecting…';
   let timer: NodeJS.Timeout | undefined;
+  let selected = 0;
+  let view: 'overview' | 'tag' = 'overview';
+  let paused = false;
+
+  const tagNames = () => byTag(events).map(r => r.name);
 
   const draw = () => {
-    const frame = render(source.label, mode, events, {
-      width: out.columns || 100, height: out.rows || 30, status, intervalS,
-    });
+    const names = tagNames();
+    selected = Math.min(Math.max(0, selected), Math.max(0, names.length - 1));
+    const o = { width: out.columns || 100, height: out.rows || 30, status: paused ? chalk.yellow('paused') : status, intervalS, paused };
+    const frame = view === 'tag' && names[selected]
+      ? renderTag(source.label, mode, events, names[selected], o)
+      : renderOverview(source.label, mode, events, o, selected);
     out.write('\x1b[H\x1b[2J' + frame);
   };
 
@@ -327,18 +441,27 @@ async function runDashboard(source: Source, mode: string, intervalS: number, kee
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true);
     process.stdin.resume();
-    process.stdin.on('data', (key: Buffer) => {
-      const k = key.toString();
-      if (k === 'q' || k === 'Q' || k === '\u0003') restore();
+    process.stdin.on('data', (buf: Buffer) => {
+      const k = buf.toString();
+      if (k === 'q' || k === 'Q' || k === '\u0003') return restore();
+      if (k === '\x1b[A' || k === 'k') selected--;
+      else if (k === '\x1b[B' || k === 'j') selected++;
+      else if (k === '\r' || k === '\x1b[C' || k === 'l') view = 'tag';
+      else if (k === '\x1b' || k === '\x1b[D' || k === 'h' || k === '\x7f') view = 'overview';
+      else if (k === 'p' || k === 'P') paused = !paused;
+      else return;
+      draw();
     });
   }
 
   const tick = async () => {
-    try {
-      events = (await source.fetchEvents()).filter(keep);
-      status = `${chalk.green('●')} updated ${time(Date.now())}`;
-    } catch (error) {
-      status = `${chalk.red('●')} ${error instanceof Error ? error.message : String(error)}`;
+    if (!paused) {
+      try {
+        events = (await source.fetchEvents()).filter(keep);
+        status = `${chalk.green('●')} updated ${time(Date.now())}`;
+      } catch (error) {
+        status = `${chalk.red('●')} ${error instanceof Error ? error.message : String(error)}`;
+      }
     }
     draw();
     timer = setTimeout(tick, intervalS * 1000);

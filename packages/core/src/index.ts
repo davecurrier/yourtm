@@ -76,6 +76,7 @@ export {
   TelemetryEventType,
   type BaseTelemetryEvent,
   type TagExecutionTelemetry,
+  type TagExecutionData,
   type TriggerEvaluationTelemetry,
   type DataLayerPushTelemetry,
   type VariableResolutionTelemetry,
